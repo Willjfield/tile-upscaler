@@ -1,0 +1,44 @@
+# Vector-Guided Aerial Tile Upscaling - dependencies
+#
+# Install on a CUDA cloud GPU box (see README). On macOS/CPU you can install the
+# "core" + "geo" groups to render OSM controls and run the lightweight steps, but
+# the diffusion/Real-ESRGAN upscalers need a GPU to be practical.
+
+# --- core ---
+numpy>=1.24,<2.2
+pillow>=10.0
+scipy>=1.10
+PyYAML>=6.0
+tqdm>=4.66
+requests>=2.31
+
+# --- geo: OSM loading + rasterisation of control images ---
+shapely>=2.0
+pyproj>=3.6
+rasterio>=1.3
+geopandas>=0.14
+pyrosm>=0.6.2            # local .osm.pbf reader (optional; Overpass is the fallback)
+
+# --- deep learning (GPU) ---
+# Install torch/torchvision matching your CUDA version FIRST, e.g.:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+torch>=2.2
+torchvision>=0.17
+
+# --- diffusion upscaler (variant B/C) ---
+diffusers>=0.27
+transformers>=4.40
+accelerate>=0.29
+safetensors>=0.4
+opencv-python-headless>=4.9   # Canny edges from OSM control images
+
+# --- baseline upscaler (Real-ESRGAN). See README: basicsr needs a one-line
+#     patch on torchvision>=0.17 (functional_tensor was removed). Swin2SR via
+#     transformers is a clean, patch-free alternative baseline. ---
+realesrgan>=0.3.0
+basicsr>=1.4.2
+
+# --- evaluation metrics ---
+scikit-image>=0.22      # PSNR / SSIM
+lpips>=0.1.4            # perceptual distance (reference)
+pyiqa>=0.1.10           # no-reference metrics (CLIP-IQA, NIQE) - optional
