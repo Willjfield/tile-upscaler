@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tile Fetcher</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+<style>
+  :root {
+    --bg: #14171c;
+    --panel: #1d222b;
+    --panel-2: #262d39;
+    --text: #e8ebf0;
+    --muted: #9aa4b2;
+    --accent: #4f8ef7;
+    --accent-2: #3a6fd0;
+    --ok: #3ecf8e;
+    --err: #f76e6e;
+    --border: #323a48;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: flex;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  #sidebar {
+    width: 320px;
+    min-width: 320px;
+    padding: 18px;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  #map { flex: 1; }
+  h1 { font-size: 16px; margin: 0; letter-spacing: 0.3px; }
+  h1 small { color: var(--muted); font-weight: 400; display: block; margin-top: 4px; font-size: 12px; }
+  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  input, select {
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--panel-2);
+    color: var(--text);
+    font-size: 13px;
+  }
+  input:focus, select:focus { outline: none; border-color: var(--accent); }
+  .row { display: flex; gap: 10px; }
+  .row > div { flex: 1; }
+  button {
+    padding: 9px 12px;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover { background: var(--accent-2); }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  button.armed { background: var(--ok); border-color: var(--ok); color: #08130d; }
+  #status { font-size: 12px; color: var(--muted); line-height: 1.5; min-height: 18px; }
+  #status.error { color: var(--err); }
+  #status.ok { color: var(--ok); }
+  #bbox-info {
+    font-size: 12px;
+    color: var(--muted);
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-variant-numeric: tabular-nums;
+    white-space: pre-line;
+  }
+  #progress-wrap { display: none; }
+  #progress-bar-bg {
+    height: 8px; border-radius: 4px; background: var(--panel-2);
+    border: 1px solid var(--border); overflow: hidden;
+  }
+  #progress-bar { height: 100%; width: 0%; background: var(--accent); transition: width 0.3s; }
+  #progress-text { font-size: 12px; color: var(--muted); margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .hint { font-size: 11px; color: var(--muted); margin-top: 3px; }
+  .leaflet-container { background: #0d0f12; cursor: default; }
+  .drawing .leaflet-container { cursor: crosshair !important; }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <h1>Tile Fetcher<small>Download XYZ tiles for a bounding box into <code>data/raster/</code></small></h1>
+
+  <div>
+    <label for="template">Tile URL template</label>
+    <input id="template" type="text" spellcheck="false"
+           placeholder="https://tiles.example.com/{z}/{x}/{y}.png?key=..." />
+    <div class="hint">Must contain {z}, {x}, {y}. Optional: {s} subdomain. Include any API key directly in the URL.</div>
+  </div>
+
+  <div class="row">
+    <div>
+      <label for="zoom">Zoom level</label>
+      <input id="zoom" type="number" min="0" max="22" value="16" />
+    </div>
+    <div>
+      <label for="tilesize">Tile resolution</label>
+      <select id="tilesize">
+        <option value="256" selected>256 px</option>
+        <option value="512">512 px</option>
+      </select>
+    </div>
+  </div>
+
+  <div>
+    <label for="subdomains">Subdomains (optional, for {s})</label>
+    <input id="subdomains" type="text" placeholder="a,b,c" />
+  </div>
+
+  <div class="row">
+    <button id="preview">Preview layer</button>
+    <button id="draw">Draw box</button>
+  </div>
+
+  <div id="bbox-info">No bounding box drawn yet.</div>
+
+  <button id="download" class="primary" disabled>Download tiles</button>
+
+  <div id="progress-wrap">
+    <div id="progress-bar-bg"><div id="progress-bar"></div></div>
+    <div id="progress-text"></div>
+  </div>
+
+  <div id="status"></div>
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+"use strict";
+
+// ---------------------------------------------------------------------------
+// Map setup
+// ---------------------------------------------------------------------------
+const map = L.map("map").setView([37.78, -122.41], 13);
+const fallbackBase = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom: 19,
+  attribution: "&copy; OpenStreetMap contributors",
+}).addTo(map);
+let previewLayer = null;
+
+// ---------------------------------------------------------------------------
+// Form helpers
+// ---------------------------------------------------------------------------
+const $ = (id) => document.getElementById(id);
+const statusEl = $("status");
+
+function setStatus(msg, cls) {
+  statusEl.textContent = msg || "";
+  statusEl.className = cls || "";
+}
+
+$("preview").addEventListener("click", () => {
+  const url = $("template").value.trim();
+  if (!url || !url.includes("{z}")) {
+    setStatus("Enter a URL template containing {z}/{x}/{y} first.", "error");
+    return;
+  }
+  if (previewLayer) map.removeLayer(previewLayer);
+  const subs = $("subdomains").value.trim();
+  previewLayer = L.tileLayer(url, {
+    maxZoom: 22,
+    tileSize: parseInt($("tilesize").value, 10),
+    zoomOffset: $("tilesize").value === "512" ? -1 : 0,
+    subdomains: subs ? subs.split(",").map(s => s.trim()) : "abc",
+  }).addTo(map);
+  setStatus("Previewing your tile layer. If tiles are broken, check the template/key.", "ok");
+});
+
+// ---------------------------------------------------------------------------
+// Slippy-map math (mirror of tile_upscaler/tiles.py tiles_for_bbox)
+// ---------------------------------------------------------------------------
+function lonlatToTile(lon, lat, z) {
+  lat = Math.max(Math.min(lat, 85.0511287798), -85.0511287798);
+  const n = 2 ** z;
+  let x = Math.floor((lon + 180) / 360 * n);
+  const latRad = lat * Math.PI / 180;
+  let y = Math.floor((1 - Math.asinh(Math.tan(latRad)) / Math.PI) / 2 * n);
+  x = Math.min(Math.max(x, 0), n - 1);
+  y = Math.min(Math.max(y, 0), n - 1);
+  return [x, y];
+}
+
+function tileCount(bbox, z) {
+  const [west, south, east, north] = bbox;
+  const [x0, y0] = lonlatToTile(west, north, z);
+  const [x1, y1] = lonlatToTile(east, south, z);
+  return (Math.abs(x1 - x0) + 1) * (Math.abs(y1 - y0) + 1);
+}
+
+// ---------------------------------------------------------------------------
+// Drag-to-draw bounding box
+// ---------------------------------------------------------------------------
+let drawing = false;
+let dragStart = null;
+let rect = null;
+let bbox = null;          // [west, south, east, north]
+
+const drawBtn = $("draw");
+
+function armDrawing() {
+  drawing = true;
+  drawBtn.textContent = "Drag on map\u2026";
+  drawBtn.classList.add("armed");
+  document.body.classList.add("drawing");
+  map.dragging.disable();
+}
+
+function disarmDrawing() {
+  drawing = false;
+  dragStart = null;
+  drawBtn.textContent = "Draw box";
+  drawBtn.classList.remove("armed");
+  document.body.classList.remove("drawing");
+  map.dragging.enable();
+}
+
+drawBtn.addEventListener("click", () => (drawing ? disarmDrawing() : armDrawing()));
+
+map.on("mousedown", (e) => {
+  if (!drawing) return;
+  dragStart = e.latlng;
+  if (rect) { map.removeLayer(rect); rect = null; }
+});
+
+map.on("mousemove", (e) => {
+  if (!drawing || !dragStart) return;
+  const b = L.latLngBounds(dragStart, e.latlng);
+  if (!rect) {
+    rect = L.rectangle(b, { color: "#4f8ef7", weight: 2, fillOpacity: 0.08 }).addTo(map);
+  } else {
+    rect.setBounds(b);
+  }
+});
+
+map.on("mouseup", (e) => {
+  if (!drawing || !dragStart) return;
+  const b = L.latLngBounds(dragStart, e.latlng);
+  disarmDrawing();
+  if (b.getWest() === b.getEast() || b.getNorth() === b.getSouth()) {
+    if (rect) { map.removeLayer(rect); rect = null; }
+    setStatus("Box was empty - click Draw box and drag again.", "error");
+    return;
+  }
+  bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+  updateBboxInfo();
+});
+
+$("zoom").addEventListener("input", updateBboxInfo);
+
+function updateBboxInfo() {
+  const info = $("bbox-info");
+  if (!bbox) { info.textContent = "No bounding box drawn yet."; return; }
+  const z = parseInt($("zoom").value, 10);
+  const n = Number.isFinite(z) ? tileCount(bbox, z) : "?";
+  info.textContent =
+    `bbox: ${bbox.map(v => v.toFixed(5)).join(", ")}\n` +
+    `tiles touched at z${z}: ${n}`;
+  $("download").disabled = false;
+}
+
+// ---------------------------------------------------------------------------
+// Download + progress polling
+// ---------------------------------------------------------------------------
+let pollTimer = null;
+
+$("download").addEventListener("click", async () => {
+  const template = $("template").value.trim();
+  if (!template.includes("{z}") || !template.includes("{x}") || !template.includes("{y}")) {
+    setStatus("URL template must contain {z}, {x} and {y}.", "error");
+    return;
+  }
+  if (!bbox) { setStatus("Draw a bounding box first.", "error"); return; }
+
+  const z = parseInt($("zoom").value, 10);
+  const n = tileCount(bbox, z);
+  let msg = `Download ${n} tiles at z${z}?`;
+  if (n > 2000) msg += `\n\nWarning: that's a lot of tiles - check your provider's rate limits and your disk.`;
+  if (!confirm(msg)) return;
+
+  const resp = await fetch("/download", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      url_template: template,
+      zoom: z,
+      bbox: bbox,
+      subdomains: $("subdomains").value.trim(),
+      tile_size: parseInt($("tilesize").value, 10),
+    }),
+  });
+  const data = await resp.json();
+  if (data.error) { setStatus(data.error, "error"); return; }
+
+  setStatus(`Downloading ${data.total} tiles into ${data.out}`, "ok");
+  $("download").disabled = true;
+  $("progress-wrap").style.display = "block";
+  pollTimer = setInterval(poll, 800);
+});
+
+async function poll() {
+  const p = await (await fetch("/progress")).json();
+  const pct = p.total ? Math.round(100 * p.done / p.total) : 0;
+  $("progress-bar").style.width = pct + "%";
+  $("progress-text").textContent =
+    `${p.done}/${p.total} (${pct}%)` +
+    (p.skipped ? ` - ${p.skipped} already on disk` : "") +
+    (p.error_count ? ` - ${p.error_count} errors` : "");
+  if (p.finished) {
+    clearInterval(pollTimer);
+    $("download").disabled = false;
+    if (p.error_count) {
+      setStatus(`Finished with ${p.error_count} errors. Last: ${p.errors[p.errors.length - 1]}`, "error");
+    } else {
+      setStatus("Finished. Tiles are ready in the output folder.", "ok");
+    }
+  }
+}
+</script>
+</body>
+</html>
