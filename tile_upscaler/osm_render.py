@@ -192,7 +192,13 @@ class OverpassOSMSource(OSMSource):
         );
         out geom;
         """
-        resp = requests.post(self.endpoint, data={"data": query}, timeout=self.timeout)
+        # overpass-api.de rejects stock library User-Agents (HTTP 406); a
+        # descriptive UA identifying the script is required by their usage policy.
+        headers = {
+            "User-Agent": "tile-upscaler-osm-render/1.0 (https://github.com/Willjfield/tile-upscaler)",
+            "Accept": "application/json",
+        }
+        resp = requests.post(self.endpoint, data={"data": query}, headers=headers, timeout=self.timeout)
         resp.raise_for_status()
         data = json.loads(resp.text)
 

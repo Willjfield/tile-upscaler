@@ -3,51 +3,45 @@
 
 # Working directories (created if missing).
 paths:
-  data: data            # inputs live here
-  out: out              # all outputs live here
-  raster: data/raster   # source aerial XYZ tiles you provide: z/x/y.png
-  osm_pbf: null   # local OSM extract (or null to use Overpass)
+  data: data # inputs live here
+  out: out # all outputs live here
+  raster: data/raster # source aerial XYZ tiles you provide: z/x/y.png
+  osm_pbf: null # local OSM extract (or null to use Overpass)
 
 # Upscaling settings.
 upscale:
-  factor: 4             # 2 (z+1) or 4 (z+2)
-  device: cuda          # cuda | cpu | mps
+  factor: 4 # 2 (z+1) or 4 (z+2)
+  device: cuda # cuda | cpu | mps
 
 # Diffusion (variant B/C) knobs - tuned for "texture-only" hallucination.
 diffusion:
   steps: 20
-  strength: 0.35        # low denoise: refine, don't repaint
+  strength: 0.35 # low denoise: refine, don't repaint
   guidance_scale: 5.0
-  tile_cond_scale: 0.9  # high: follow source contours
-  osm_cond_scale: 0.45  # OSM ControlNet weight (variant C)
+  tile_cond_scale: 0.9 # high: follow source contours
+  osm_cond_scale: 0.45 # OSM ControlNet weight (variant C)
   seed: 1234
-  color_fix: wavelet    # wavelet | adain | none
+  color_fix: wavelet # wavelet | adain | none
 
 # Which methods to run.
 methods:
-  baseline_realesrgan: true   # A: no vector
+  baseline_realesrgan: true # A: no vector
   baseline_swin2sr: false
-  controlnet_text: true       # B: tile ControlNet + OSM text prompt
-  controlnet_osm: true        # C: B + OSM-edge ControlNet
+  controlnet_text: true # B: tile ControlNet + OSM text prompt
+  controlnet_osm: true # C: B + OSM-edge ControlNet
 
 # Sample areas of interest. Pick small, contrasting land types so we can see
 # where vector guidance helps. bbox is west,south,east,north (degrees).
 # (These three are illustrative - replace with regions you have tiles for.)
 aois:
-  - name: urban_sf
-    bbox: [-122.4194, 37.7849, -122.4094, 37.7949]   # dense urban
-    zoom: 16
-  - name: suburban
-    bbox: [-122.1450, 37.4300, -122.1350, 37.4400]   # suburban housing
-    zoom: 16
-  - name: rural_natural
-    bbox: [-119.5400, 37.7400, -119.5300, 37.7500]   # natural terrain
-    zoom: 16
+  - name: glasgow
+    bbox: [-4.28516, 55.86537, -4.28008, 55.86762] # dense urban
+    zoom: 18
 
 # Evaluation: if you have genuine high-zoom (HR) tiles, point to them to enable
 # the degradation ground-truth test (PSNR/SSIM/LPIPS). Otherwise leave null and
 # only the no-reference + cross-scale consistency checks run.
 eval:
-  hr_root: null         # e.g. data/hr  (real z18 tiles for the degradation test)
+  hr_root: null # e.g. data/hr  (real z18 tiles for the degradation test)
   no_reference: true
   comparison_sheets: true
