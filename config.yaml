@@ -7,7 +7,7 @@ paths:
   out: out # all outputs live here
   raster: data/raster # source aerial XYZ tiles you provide: z/x/y.png
   osm_pbf: null # local OSM extract (or null to use Overpass)
-
+  archive_out: out-results.zip # e.g. out-results.zip — zip out/ when the run finishes (RunPod download)
 # Upscaling settings.
 upscale:
   factor: 4 # 2 (z+1) or 4 (z+2)

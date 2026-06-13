@@ -65,8 +65,9 @@ pip install -r requirements.txt
 > removed `torchvision.transforms.functional_tensor`. One-line fix after install:
 > ```bash
 > python - <<'PY'
-> import basicsr.data.degradations as d, pathlib
-> p = pathlib.Path(d.__file__)
+> import importlib.util, pathlib
+> spec = importlib.util.find_spec("basicsr")  # locate without importing (import itself crashes)
+> p = pathlib.Path(spec.origin).parent / "data" / "degradations.py"
 > p.write_text(p.read_text().replace(
 >     "from torchvision.transforms.functional_tensor import rgb_to_grayscale",
 >     "from torchvision.transforms.functional import rgb_to_grayscale"))
@@ -98,6 +99,35 @@ Outputs:
 - `out/serve/<method>/` - re-cut deeper-zoom tiles ready to serve
 - `out/metrics/*.csv` - PSNR/SSIM/LPIPS (if HR), consistency, no-reference
 - `out/sheets/` - side-by-side comparison panels
+- `out-results.zip` - *(optional)* entire `out/` tree, if `paths.archive_out` is set
+
+### Downloading results from RunPod
+
+RunPod's S3 API is flaky for hundreds of individual tile files. Prefer a single
+archive:
+
+```yaml
+# config.yaml
+paths:
+  archive_out: out-results.zip
+```
+
+Or zip an existing run without re-processing:
+
+```bash
+python run_experiment.py --archive-only out-results.zip
+```
+
+Then download one file from your Mac:
+
+```bash
+aws s3 cp s3://YOUR_VOLUME/out-results.zip ./out-results.zip \
+  --region eu-ro-1 --endpoint-url https://s3api-eu-ro-1.runpod.io
+unzip out-results.zip
+```
+
+See [`scripts/runpod_s3_download.sh`](scripts/runpod_s3_download.sh) if you still
+need individual files.
 
 ## Run steps individually
 

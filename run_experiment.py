@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 from typing import Dict, Optional
 
 import yaml
@@ -76,16 +77,53 @@ def _render_osm(lr_root: str, out_osm: str, pbf: Optional[str], control_size: in
     return prompts_path
 
 
+def _archive_out(out_dir: str, archive_path: str) -> str:
+    """Zip ``out_dir`` into ``archive_path`` (``.zip`` added if missing).
+
+    The archive contains a single top-level ``out/`` folder (or whatever
+    ``out_dir`` is named). Intended for one-shot download from RunPod via S3.
+    """
+    if not os.path.isdir(out_dir):
+        raise SystemExit(f"Cannot archive: {out_dir} is not a directory")
+    base, ext = os.path.splitext(archive_path)
+    if ext.lower() != ".zip":
+        base = archive_path
+    else:
+        archive_path = base + ".zip"
+    parent = os.path.dirname(os.path.abspath(out_dir)) or "."
+    name = os.path.basename(out_dir.rstrip(os.sep))
+    print(f"\nPacking {out_dir}/ -> {base}.zip ...")
+    shutil.make_archive(base, "zip", root_dir=parent, base_dir=name)
+    size_mb = os.path.getsize(base + ".zip") / (1024 * 1024)
+    print(f"Archive ready: {base}.zip ({size_mb:.1f} MB)")
+    return base + ".zip"
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Run the full upscaling experiment")
     parser.add_argument("--config", default="config.yaml")
     parser.add_argument("--limit", type=int, default=None, help="Cap tiles per method (debug)")
     parser.add_argument("--skip-osm", action="store_true", help="Reuse existing OSM render")
+    parser.add_argument(
+        "--archive-out",
+        metavar="PATH",
+        help="Zip paths.out to PATH when done (overrides config paths.archive_out)",
+    )
+    parser.add_argument(
+        "--archive-only",
+        metavar="PATH",
+        help="Only zip paths.out to PATH and exit (no upscaling)",
+    )
     args = parser.parse_args(argv)
 
     cfg = _load_config(args.config)
     paths = cfg["paths"]
     out = paths["out"]
+
+    if args.archive_only:
+        _archive_out(out, args.archive_only)
+        return 0
+
     factor = int(cfg["upscale"]["factor"])
     device = cfg["upscale"].get("device")
     os.makedirs(out, exist_ok=True)
@@ -183,6 +221,11 @@ def main(argv=None) -> int:
 
     print("\nDone. Upscaled trees in out/up/, servable tiles in out/serve/, "
           "metrics in out/metrics/, sheets in out/sheets/.")
+
+    archive_path = args.archive_out or paths.get("archive_out")
+    if archive_path:
+        _archive_out(out, archive_path)
+
     return 0
 
 
