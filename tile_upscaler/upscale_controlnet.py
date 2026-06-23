@@ -7,9 +7,9 @@ Diffusion XL img2img pipeline conditioned by one or two ControlNets:
   tile. This is what keeps the output *faithful* to the original - same large
   structures, same layout - so we get texture, not a repaint.
 - **OSM ControlNet** (optional, ``--use-osm``): a second ControlNet conditioned
-  on edges extracted from the rendered OSM control image. This nudges the model
-  to align detail with real-world boundaries (roads, building footprints, field
-  and water edges) - the "vector guides the AI" mechanism.
+  on building-footprint outlines rasterised from OSM (white edges on black).
+  The full palette control image is still written for debugging, but spatial
+  guidance uses outline edges directly — not Canny on the palette.
 
 Cross-scale consistency (the key quality requirement) is enforced three ways:
   1. low denoise ``--strength`` (texture, not repaint),
@@ -61,6 +61,7 @@ class UpscaleConfig:
     tile_cond_scale: float = 0.9     # high: follow source contours
     osm_cond_scale: float = 0.45
     use_osm: bool = False
+    osm_use_canny: bool = False  # legacy: Canny on palette image instead of building edges
     seed: int = 1234
     window: int = 1024               # diffusion window (SDXL native ~1024)
     overlap: int = 128               # feathered overlap between windows
@@ -150,6 +151,7 @@ class ControlNetUpscaler:
         tile: Tile,
         prompt: str,
         osm_control_image=None,
+        osm_use_canny: Optional[bool] = None,
     ):
         """Upscale a single source tile (PIL) -> color-fixed PIL image."""
         from PIL import Image
@@ -160,7 +162,12 @@ class ControlNetUpscaler:
 
         osm_edges = None
         if self.cfg.use_osm and osm_control_image is not None:
-            osm_edges = self._canny(osm_control_image).resize((target, target), Image.NEAREST)
+            prepared = osm_control_image.convert("RGB").resize((target, target), Image.NEAREST)
+            use_canny = self.cfg.osm_use_canny if osm_use_canny is None else osm_use_canny
+            if use_canny:
+                osm_edges = self._canny(prepared)
+            else:
+                osm_edges = prepared
 
         generator = self.torch.Generator(device=self.device).manual_seed(self._seed_for(tile))
         result = self._tiled_diffuse(base, prompt, osm_edges, generator)
@@ -257,7 +264,8 @@ def run_tree(
     """Upscale every raster tile under ``src_root`` into ``out_root``.
 
     ``osm_root`` (optional) is an XYZ tree of OSM control images (from
-    ``osm_render.py``); ``prompts_path`` is the ``prompts.json`` it emits.
+    ``osm_render.py``); building-edge controls live in ``<osm_root>/edges/``.
+    ``prompts_path`` is the ``prompts.json`` it emits.
     """
     upscaler = ControlNetUpscaler(config)
 
@@ -276,11 +284,18 @@ def run_tree(
         source = tileio.load_image(tf.path)
         prompt = prompts.get(tf.tile.key, default_prompt)
         osm_img = None
-        if config.use_osm:
-            osm_path = tileio.find_companion(osm_root, tf.tile)
+        osm_use_canny = False
+        if config.use_osm and osm_root:
+            edges_root = os.path.join(osm_root, "edges")
+            osm_path = tileio.find_companion(edges_root, tf.tile)
+            if osm_path is None:
+                osm_path = tileio.find_companion(osm_root, tf.tile)
+                osm_use_canny = True
             if osm_path:
                 osm_img = tileio.load_image(osm_path)
-        out = upscaler.upscale_tile(source, tf.tile, prompt, osm_control_image=osm_img)
+        out = upscaler.upscale_tile(
+            source, tf.tile, prompt, osm_control_image=osm_img, osm_use_canny=osm_use_canny,
+        )
         tileio.write_tile(out_root, tf.tile, out)
         done += 1
         rate = done / (time.time() - t0)

@@ -137,15 +137,16 @@ Every module is runnable on its own:
 # Tile math
 python -m tile_upscaler.tiles list --bbox -122.42,37.78,-122.41,37.79 --zoom 16
 
-# Render OSM control images + prompts for a tile tree
+# Render OSM palette controls, building-edge controls, and rich prompts
 python -m tile_upscaler.osm_render --pbf data/region.osm.pbf \
     --tiles-file tiles.txt --out out/osm --size 1024
+# -> out/osm/z/x/y.png (palette)  out/osm/edges/z/x/y.png (building outlines)
 
 # Baseline (no vector)
 python -m tile_upscaler.upscale_baseline --src data/raster --out out/up/A_realesrgan \
     --backend realesrgan --scale 4
 
-# Vector-guided diffusion (variant C: + OSM ControlNet)
+# Vector-guided diffusion (variant C: + OSM ControlNet on building edges)
 python -m tile_upscaler.upscale_controlnet --src data/raster --out out/up/C \
     --osm out/osm --prompts out/osm/prompts.json --use-osm \
     --scale 4 --strength 0.35 --tile-scale 0.9 --osm-scale 0.45
@@ -186,7 +187,7 @@ vector-conditioned path is experimental and may need extra training.
 | File | Role |
 |------|------|
 | [`tiles.py`](tile_upscaler/tiles.py) | slippy-map z/x/y <-> bbox math, AOI enumeration, child/neighbour tiles |
-| [`osm_render.py`](tile_upscaler/osm_render.py) | OSM -> control image (Web-Mercator aligned) + text prompt |
+| [`osm_render.py`](tile_upscaler/osm_render.py) | OSM -> palette + building-edge controls + rich text prompts |
 | [`colorfix.py`](tile_upscaler/colorfix.py) | wavelet / AdaIN color matching for cross-scale consistency |
 | [`upscale_baseline.py`](tile_upscaler/upscale_baseline.py) | Real-ESRGAN / Swin2SR (no vector) |
 | [`upscale_controlnet.py`](tile_upscaler/upscale_controlnet.py) | SDXL + ControlNet (Tile [+ OSM]) diffusion upscaler |

@@ -24,6 +24,10 @@ diffusion:
   seed: 1234
   color_fix: wavelet    # wavelet | adain | none
 
+# OSM vector guidance (control images + prompts).
+osm:
+  edge_line_width_px: 2.0   # building-outline stroke width in the edges/ control image
+
 # Which methods to run.
 methods:
   baseline_realesrgan: true   # A: no vector

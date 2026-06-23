@@ -7,7 +7,7 @@ OSM-guided diffusion upscaling.
 Modules
 -------
 - tiles:             slippy-map tile math and AOI enumeration
-- osm_render:        rasterize OSM vector data into ControlNet control images + text prompts
+- osm_render:        rasterize OSM into palette + building-edge controls + rich prompts
 - colorfix:          wavelet / AdaIN color matching for cross-scale consistency
 - upscale_baseline:  Real-ESRGAN / Swin2SR (no vector) upscaling
 - upscale_controlnet: SDXL + ControlNet (Tile + optional OSM) diffusion upscaling

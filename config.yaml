@@ -15,13 +15,17 @@ upscale:
 
 # Diffusion (variant B/C) knobs - tuned for "texture-only" hallucination.
 diffusion:
-  steps: 20
-  strength: 0.35 # low denoise: refine, don't repaint
-  guidance_scale: 5.0
+  steps: 30
+  strength: 0.4 # low denoise: refine, don't repaint
+  guidance_scale: 6.0
   tile_cond_scale: 0.9 # high: follow source contours
   osm_cond_scale: 0.45 # OSM ControlNet weight (variant C)
   seed: 1234
   color_fix: wavelet # wavelet | adain | none
+
+# OSM vector guidance (control images + prompts).
+osm:
+  edge_line_width_px: 2.0 # building-outline stroke width in the edges/ control image
 
 # Which methods to run.
 methods:

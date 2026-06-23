@@ -117,6 +117,95 @@ def test_degradation_roundtrip():
     print("ok test_degradation_roundtrip")
 
 
+def test_build_prompt_rich_tags():
+    from tile_upscaler import osm_render as orm
+
+    feats = orm.TileFeatures(bounds_lonlat=(-4.28, 55.86, -4.27, 55.87))
+    feats.counts = {"building": 12, "road": 3, "vegetation": 5}
+    feats.tag_rollup.building_types = {"terrace": 8, "apartments": 4}
+    feats.tag_rollup.building_levels = [2, 3, 4, 4]
+    feats.tag_rollup.roof_shapes = {"gabled": 6, "flat": 2}
+    feats.tag_rollup.roof_materials = {"slate": 7}
+    feats.tag_rollup.building_materials = {"brick": 9}
+    feats.tag_rollup.roof_colours = {"grey": 5}
+    feats.tag_rollup.road_names = {"Sauchiehall Street": 2, "Renfrew Street": 1}
+    feats.tag_rollup.addr_streets = {"Sauchiehall Street": 4, "Rose Street": 2}
+    feats.tag_rollup.highway_types = {"residential": 2, "secondary": 1}
+    feats.tag_rollup.surfaces = {"asphalt": 4, "paving_stones": 1}
+    feats.tag_rollup.landuse = {"grass": 3}
+    feats.tag_rollup.sport = {"tennis": 1}
+    feats.tag_rollup.historic = {"building": 1}
+    prompt = orm.build_prompt(feats)
+    assert "terraced houses" in prompt
+    assert "gabled rooftops" in prompt
+    assert "slate rooftops" in prompt
+    assert "brick buildings" in prompt
+    assert "grey rooftops" in prompt
+    assert "along Sauchiehall Street" in prompt
+    assert "on Rose Street" in prompt
+    assert "multi-storey" in prompt
+    assert "grassy areas" in prompt
+    assert "tennis courts" in prompt
+    assert "historic building" in prompt
+    print("ok test_build_prompt_rich_tags")
+
+
+def test_ingest_tags():
+    from tile_upscaler import osm_render as orm
+
+    feats = orm.TileFeatures(bounds_lonlat=(0, 0, 1, 1))
+    orm._ingest_tags(
+        feats,
+        {
+            "building": "terrace",
+            "building:levels": "3",
+            "building:material": "brick",
+            "roof:shape": "gabled",
+            "roof:material": "slate",
+            "roof:colour": "grey",
+            "addr:street": "High Street",
+            "addr:place": "Old Town",
+            "shop": "convenience",
+            "tourism": "hotel",
+        },
+    )
+    orm._ingest_tags(
+        feats,
+        {"highway": "residential", "name": "High Street", "surface": "asphalt"},
+        is_road=True,
+    )
+    rollup = feats.tag_rollup
+    assert rollup.building_types["terrace"] == 1
+    assert rollup.building_levels == [3]
+    assert rollup.roof_shapes["gabled"] == 1
+    assert rollup.addr_streets["High Street"] == 1
+    assert rollup.addr_places["Old Town"] == 1
+    assert rollup.road_names["High Street"] == 1
+    assert rollup.surfaces["asphalt"] == 1
+    assert rollup.shop["convenience"] == 1
+    print("ok test_ingest_tags")
+
+
+def test_building_edge_control_image():
+    from shapely.geometry import box
+
+    from tile_upscaler import osm_render as orm
+
+    tile = Tile(18, 127955, 81803)
+    west, south, east, north = tile_bounds_lonlat(tile)
+    cx, cy = (west + east) / 2, (south + north) / 2
+    delta = (east - west) * 0.05
+    poly = box(cx - delta, cy - delta, cx + delta, cy + delta)
+    feats = orm.TileFeatures(bounds_lonlat=(west, south, east, north))
+    feats.polygons["building"] = [poly]
+    edges = orm.render_building_edge_control_image(tile, feats, size=256, line_width_px=2)
+    assert edges.shape == (256, 256, 3)
+    assert int(edges.max()) > 0
+    white = edges[:, :, 0]
+    assert white.sum() == edges[:, :, 1].sum() == edges[:, :, 2].sum()
+    print("ok test_building_edge_control_image")
+
+
 if __name__ == "__main__":
     test_tile_math()
     test_colorfix_reduces_drift()
@@ -124,4 +213,7 @@ if __name__ == "__main__":
     test_blend_helpers()
     test_consistency_metric()
     test_degradation_roundtrip()
+    test_build_prompt_rich_tags()
+    test_ingest_tags()
+    test_building_edge_control_image()
     print("\nALL CORE TESTS PASSED")

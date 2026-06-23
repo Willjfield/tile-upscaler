@@ -44,7 +44,13 @@ def _first_tile_size(root: str) -> int:
     return tileio.load_image(tiles[0].path).width
 
 
-def _render_osm(lr_root: str, out_osm: str, pbf: Optional[str], control_size: int) -> str:
+def _render_osm(
+    lr_root: str,
+    out_osm: str,
+    pbf: Optional[str],
+    control_size: int,
+    edge_line_width_px: float = 2.0,
+) -> str:
     """Render OSM control images for every LR tile; return prompts.json path."""
     import json
 
@@ -59,13 +65,17 @@ def _render_osm(lr_root: str, out_osm: str, pbf: Optional[str], control_size: in
 
     prompts: Dict[str, str] = {}
     tiles = tileio.find_tiles(lr_root)
+    edges_root = os.path.join(out_osm, "edges")
     for i, tf in enumerate(tiles, 1):
         try:
-            control, prompt = osm_render.render_tile(source, tf.tile, size=control_size)
+            control, edges, prompt = osm_render.render_tile(
+                source, tf.tile, size=control_size, edge_line_width_px=edge_line_width_px,
+            )
         except Exception as exc:  # keep going; a tile without OSM coverage is fine
             print(f"  [warn] OSM render failed for {tf.tile.key}: {exc}")
             continue
         tileio.write_tile(out_osm, tf.tile, Image.fromarray(control))
+        tileio.write_tile(edges_root, tf.tile, Image.fromarray(edges))
         prompts[tf.tile.key] = prompt
         if i % 25 == 0:
             print(f"  rendered OSM {i}/{len(tiles)}")
@@ -73,7 +83,7 @@ def _render_osm(lr_root: str, out_osm: str, pbf: Optional[str], control_size: in
     os.makedirs(out_osm, exist_ok=True)
     with open(prompts_path, "w") as fh:
         json.dump(prompts, fh, indent=2)
-    print(f"Rendered OSM controls for {len(prompts)} tiles -> {out_osm}")
+    print(f"Rendered OSM controls for {len(prompts)} tiles -> {out_osm} (edges -> {edges_root})")
     return prompts_path
 
 
@@ -145,8 +155,15 @@ def main(argv=None) -> int:
     osm_tree = os.path.join(out, "osm")
     prompts_path = os.path.join(osm_tree, "prompts.json")
     need_osm = cfg["methods"].get("controlnet_text") or cfg["methods"].get("controlnet_osm")
+    osm_cfg = cfg.get("osm") or {}
     if need_osm and not args.skip_osm:
-        prompts_path = _render_osm(lr_root, osm_tree, paths.get("osm_pbf"), target_size)
+        prompts_path = _render_osm(
+            lr_root,
+            osm_tree,
+            paths.get("osm_pbf"),
+            target_size,
+            edge_line_width_px=float(osm_cfg.get("edge_line_width_px", 2.0)),
+        )
 
     # --- 3. run methods -------------------------------------------------------
     produced: Dict[str, str] = {}
