@@ -36,7 +36,7 @@ for arg in "$@"; do
   esac
 done
 
-log() { printf '==> %s\n' "$*"; }
+log() { printf '==> %s\n' "$*" >&2; }
 
 venv_python_ok() {
   [[ -x .venv/bin/python ]] || return 1
@@ -52,7 +52,7 @@ infer_torch_index() {
     local ver
     ver="$(nvidia-smi 2>/dev/null | sed -n 's/.*CUDA Version: \([0-9][0-9]*\.[0-9][0-9]*\).*/\1/p' | head -1)"
     case "$ver" in
-      12.8|12.7|12.6|12.5|12.4) echo "https://download.pytorch.org/whl/cu124" ;;
+      13.*|12.8|12.7|12.6|12.5|12.4) echo "https://download.pytorch.org/whl/cu124" ;;
       12.3|12.2|12.1) echo "https://download.pytorch.org/whl/cu121" ;;
       12.0) echo "https://download.pytorch.org/whl/cu121" ;;
       11.8) echo "https://download.pytorch.org/whl/cu118" ;;
