@@ -127,6 +127,11 @@ setup_hf_cache
 if [[ "$RECREATE" -eq 1 ]]; then
   log "Removing existing .venv (--recreate)"
   rm -rf .venv
+  # Stale/corrupt wheels often linger after "disk quota exceeded" failures.
+  if command -v pip >/dev/null 2>&1; then
+    pip cache purge >/dev/null 2>&1 || true
+  fi
+  rm -rf "${PIP_CACHE_DIR:-$HOME/.cache/pip}" /workspace/.cache/pip 2>/dev/null || true
 elif venv_python_ok; then
   log "Existing .venv looks usable (run with --recreate to rebuild on a new pod image)"
 else
