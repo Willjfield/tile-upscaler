@@ -50,6 +50,11 @@ the diffusion path.
 
 ## Install (cloud GPU box, CUDA)
 
+**RunPod users:** skip the manual steps below — use [`scripts/runpod_setup.sh`](scripts/runpod_setup.sh)
+each time you start a **new pod** on your network volume (see [RunPod workflow](#runpod-network-volume)).
+
+Manual install (any cloud GPU box):
+
 ```bash
 # 1. Python env
 python -m venv .venv && source .venv/bin/activate
@@ -59,10 +64,12 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
 
 # 3. The rest
 pip install -r requirements.txt
+bash scripts/install_pyrosm.sh   # local .osm.pbf reader (optional but recommended)
 ```
 
 > **Real-ESRGAN / basicsr note:** on `torchvision>=0.17`, `basicsr` imports the
-> removed `torchvision.transforms.functional_tensor`. One-line fix after install:
+> removed `torchvision.transforms.functional_tensor`. `scripts/runpod_setup.sh`
+> patches this automatically; for manual installs:
 > ```bash
 > python - <<'PY'
 > import importlib.util, pathlib
@@ -75,6 +82,123 @@ pip install -r requirements.txt
 > PY
 > ```
 > Or just use the `swin2sr` baseline backend, which installs cleanly.
+
+## RunPod (network volume)
+
+RunPod pods are ephemeral; a **network volume** persists your repo, tiles, OSM
+extract, config, and experiment outputs across pod swaps. The Python virtualenv
+does **not** survive cleanly — `.venv/bin/python` is a symlink to the system
+interpreter on the pod where you created it. On a new pod image that path often
+does not exist, so you get `No such file or directory` even though `.venv/`
+is visible on the volume.
+
+### Quick start on every new pod
+
+SSH in, then:
+
+```bash
+cd /workspace/tile-upscaler    # or wherever the volume mounts the repo
+git pull                       # if you pushed changes from your Mac
+bash scripts/runpod_setup.sh --recreate
+source .venv/bin/activate
+python run_experiment.py --limit 5    # smoke test
+python run_experiment.py              # full run
+```
+
+`--recreate` is recommended on every new pod. Without it, the script only
+rebuilds the venv if the existing one is broken.
+
+Optional flags:
+
+```bash
+bash scripts/runpod_setup.sh --recreate --skip-pyrosm   # if you use Overpass only
+TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121 bash scripts/runpod_setup.sh --recreate
+```
+
+The script will:
+
+1. Infer the PyTorch CUDA wheel index from `nvidia-smi` (or use `TORCH_INDEX_URL`)
+2. Recreate `.venv` and install `torch`, `requirements.txt`, and `pyrosm`
+3. Patch `basicsr` for Real-ESRGAN
+4. Set `HF_HOME` to `<repo>/.cache/huggingface` on the volume (so SDXL weights
+   are not re-downloaded every pod) and append it to `~/.bashrc`
+
+### What persists vs what you redo
+
+| On the network volume (keeps) | Per new pod (redo via `runpod_setup.sh`) |
+|-------------------------------|------------------------------------------|
+| Repo, `data/raster/`, `.osm.pbf` | Python `.venv` |
+| `config.yaml`, `out/` results | `pip install` / torch |
+| `.cache/huggingface/` model weights | `basicsr` patch |
+| | SSH key in `authorized_keys` (unless your template injects it) |
+
+### Checklist beyond first-time install
+
+When you spin up a **new** pod on an existing volume:
+
+1. **Attach the correct network volume** — confirm the mount path (`/workspace/...`
+   vs `/tile-upscaler/...`) and `cd` into the repo.
+2. **Run `bash scripts/runpod_setup.sh --recreate`** — do not assume an old
+   `.venv` works on a new container image.
+3. **`source .venv/bin/activate`** before running Python (or use `.venv/bin/python` directly).
+4. **`git pull`** if you changed code locally and pushed to GitHub.
+5. **`config.yaml`** — set `paths.osm_pbf` to your extract (e.g.
+   `data/glasgow_extract.osm.pbf`); `null` falls back to Overpass (slow, rate-limited).
+6. **Verify GPU** — `nvidia-smi` should show your card; then
+   `python -c "import torch; print(torch.cuda.is_available())"` should print `True`.
+7. **SSH** — register your public key in RunPod Settings → SSH keys; keys added
+   after a pod starts may need to be injected into `~/.ssh/authorized_keys` manually.
+
+### Recreating `.venv` manually
+
+If you prefer not to use the script:
+
+```bash
+cd /workspace/tile-upscaler
+deactivate 2>/dev/null || true
+rm -rf .venv
+python3 -m venv .venv && source .venv/bin/activate
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+pip install -r requirements.txt
+bash scripts/install_pyrosm.sh
+# basicsr patch — see Install section above
+```
+
+Diagnose a broken venv:
+
+```bash
+ls -la .venv/bin/python .venv/bin/python3   # symlinks — note the target path
+which python3 && python3 --version
+.venv/bin/python -c "import sys"            # fails if symlink target is missing
+```
+
+### Downloading results from RunPod
+
+RunPod's S3 API is flaky for hundreds of individual tile files. Prefer a single
+archive:
+
+```yaml
+# config.yaml
+paths:
+  archive_out: out-results.zip
+```
+
+Or zip an existing run without re-processing:
+
+```bash
+python run_experiment.py --archive-only out-results.zip
+```
+
+Then download one file from your Mac:
+
+```bash
+aws s3 cp s3://YOUR_VOLUME/tile-upscaler/out-results.zip ./out-results.zip \
+  --region eu-ro-1 --endpoint-url https://s3api-eu-ro-1.runpod.io
+unzip out-results.zip
+```
+
+See [`scripts/runpod_s3_download.sh`](scripts/runpod_s3_download.sh) if you still
+need individual files.
 
 ## Inputs you provide
 
@@ -100,34 +224,6 @@ Outputs:
 - `out/metrics/*.csv` - PSNR/SSIM/LPIPS (if HR), consistency, no-reference
 - `out/sheets/` - side-by-side comparison panels
 - `out-results.zip` - *(optional)* entire `out/` tree, if `paths.archive_out` is set
-
-### Downloading results from RunPod
-
-RunPod's S3 API is flaky for hundreds of individual tile files. Prefer a single
-archive:
-
-```yaml
-# config.yaml
-paths:
-  archive_out: out-results.zip
-```
-
-Or zip an existing run without re-processing:
-
-```bash
-python run_experiment.py --archive-only out-results.zip
-```
-
-Then download one file from your Mac:
-
-```bash
-aws s3 cp s3://YOUR_VOLUME/out-results.zip ./out-results.zip \
-  --region eu-ro-1 --endpoint-url https://s3api-eu-ro-1.runpod.io
-unzip out-results.zip
-```
-
-See [`scripts/runpod_s3_download.sh`](scripts/runpod_s3_download.sh) if you still
-need individual files.
 
 ## Run steps individually
 
@@ -195,6 +291,9 @@ vector-conditioned path is experimental and may need extra training.
 | [`retile.py`](tile_upscaler/retile.py) | cut upscaled images into deeper-zoom XYZ tiles |
 | [`sgdm_runner.py`](tile_upscaler/sgdm_runner.py) | stretch: SGDM integration |
 | [`run_experiment.py`](run_experiment.py) | end-to-end orchestrator driven by `config.yaml` |
+| [`scripts/runpod_setup.sh`](scripts/runpod_setup.sh) | bootstrap venv + deps on a new RunPod pod |
+| [`scripts/runpod_s3_download.sh`](scripts/runpod_s3_download.sh) | download files from a RunPod volume via S3 |
+| [`scripts/install_pyrosm.sh`](scripts/install_pyrosm.sh) | install pyrosm (not in requirements.txt) |
 
 ## Status
 
