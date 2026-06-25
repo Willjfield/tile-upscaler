@@ -124,6 +124,11 @@ def main(argv=None) -> int:
         metavar="PATH",
         help="Only zip paths.out to PATH and exit (no upscaling)",
     )
+    parser.add_argument(
+        "--eval-only",
+        action="store_true",
+        help="Skip upscaling; run evaluation on existing out/up/ trees",
+    )
     args = parser.parse_args(argv)
 
     cfg = _load_config(args.config)
@@ -135,6 +140,26 @@ def main(argv=None) -> int:
         return 0
 
     factor = int(cfg["upscale"]["factor"])
+
+    if args.eval_only:
+        hr_root = (cfg.get("eval") or {}).get("hr_root")
+        lr_root = os.path.join(out, "lr") if hr_root else paths["raster"]
+        up_root = os.path.join(out, "up")
+        if not os.path.isdir(up_root):
+            raise SystemExit(f"No upscaled outputs at {up_root}; run upscaling first")
+        produced = {
+            name: os.path.join(up_root, name)
+            for name in sorted(os.listdir(up_root))
+            if os.path.isdir(os.path.join(up_root, name))
+        }
+        if not produced:
+            raise SystemExit(f"No method directories under {up_root}")
+        print(f"Eval-only: found {len(produced)} method(s) in {up_root}")
+        _run_evaluation(cfg, paths, produced, lr_root, hr_root, args.limit)
+        archive_path = args.archive_out or paths.get("archive_out")
+        if archive_path:
+            _archive_out(out, archive_path)
+        return 0
     device = cfg["upscale"].get("device")
     os.makedirs(out, exist_ok=True)
 
@@ -219,7 +244,25 @@ def main(argv=None) -> int:
         serve = os.path.join(out, "serve", name)
         retile.run_tree(src, serve, factor=factor)
 
-    # --- 5. evaluate ----------------------------------------------------------
+    _run_evaluation(cfg, paths, produced, lr_root, hr_root, args.limit)
+
+    archive_path = args.archive_out or paths.get("archive_out")
+    if archive_path:
+        _archive_out(out, archive_path)
+
+    return 0
+
+
+def _run_evaluation(
+    cfg: dict,
+    paths: dict,
+    produced: Dict[str, str],
+    lr_root: str,
+    hr_root: Optional[str],
+    limit: Optional[int],
+) -> None:
+    """Run metrics and comparison sheets for upscaled method trees."""
+    out = paths["out"]
     print("\n#### EVALUATION ####")
     metrics_dir = os.path.join(out, "metrics")
     os.makedirs(metrics_dir, exist_ok=True)
@@ -233,17 +276,11 @@ def main(argv=None) -> int:
     if (cfg.get("eval") or {}).get("comparison_sheets") and produced:
         ev.comparison_sheets(
             lr_root, produced, os.path.join(out, "sheets"),
-            hr_root=hr_root, limit=args.limit,
+            hr_root=hr_root, limit=limit,
         )
 
     print("\nDone. Upscaled trees in out/up/, servable tiles in out/serve/, "
           "metrics in out/metrics/, sheets in out/sheets/.")
-
-    archive_path = args.archive_out or paths.get("archive_out")
-    if archive_path:
-        _archive_out(out, archive_path)
-
-    return 0
 
 
 if __name__ == "__main__":

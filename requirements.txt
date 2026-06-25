@@ -44,3 +44,4 @@ basicsr>=1.4.2
 scikit-image>=0.22      # PSNR / SSIM
 lpips>=0.1.4            # perceptual distance (reference)
 pyiqa>=0.1.10           # no-reference metrics (CLIP-IQA, NIQE) - optional
+setuptools>=70,<82      # pyiqa->clip uses pkg_resources.packaging (removed in setuptools 82+)

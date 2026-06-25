@@ -204,17 +204,38 @@ def _corr(a: np.ndarray, b: np.ndarray) -> float:
 # ---------------------------------------------------------------------------
 # No-reference perceptual metrics (optional, via pyiqa)
 # ---------------------------------------------------------------------------
+def _load_nr_metrics(metrics: Tuple[str, ...], device: str) -> Dict[str, object]:
+    """Load pyiqa metrics individually so one broken backend does not abort eval."""
+    import pyiqa
+
+    models: Dict[str, object] = {}
+    for name in metrics:
+        try:
+            models[name] = pyiqa.create_metric(name, device=device)
+        except Exception as exc:
+            print(f"  [warn] no-reference metric {name!r} unavailable ({exc}); skipping")
+    return models
+
+
 def no_reference(sr_root: str, metrics: Tuple[str, ...] = ("clipiqa", "niqe"), csv_path: Optional[str] = None) -> Dict[str, float]:
     try:
-        import pyiqa
         import torch
+    except ImportError:
+        print("torch not installed; skipping no-reference metrics")
+        return {}
+
+    try:
+        import pyiqa  # noqa: F401
     except ImportError:
         print("pyiqa not installed; skipping no-reference metrics "
               "(pip install pyiqa)")
         return {}
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    models = {m: pyiqa.create_metric(m, device=device) for m in metrics}
+    models = _load_nr_metrics(metrics, device)
+    if not models:
+        print("No no-reference metrics could be loaded; skipping")
+        return {}
     from PIL import Image
     import torchvision.transforms.functional as TF
 
