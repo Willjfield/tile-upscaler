@@ -49,13 +49,29 @@ infer_torch_index() {
     return
   fi
   if command -v nvidia-smi >/dev/null 2>&1; then
-    local ver
+    local cap ver
+    cap="$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -1 | tr -d ' ')"
+    # Blackwell (RTX 50xx / RTX PRO 4500) is sm_120 = compute capability 12.0
+    if [[ "$cap" == 12.0 ]]; then
+      log "Detected Blackwell GPU (compute capability $cap); using cu128 PyTorch"
+      echo "https://download.pytorch.org/whl/cu128"
+      return
+    fi
     ver="$(nvidia-smi 2>/dev/null | sed -n 's/.*CUDA Version: \([0-9][0-9]*\.[0-9][0-9]*\).*/\1/p' | head -1)"
     case "$ver" in
-      13.*|12.8|12.7|12.6|12.5|12.4) echo "https://download.pytorch.org/whl/cu124" ;;
-      12.3|12.2|12.1) echo "https://download.pytorch.org/whl/cu121" ;;
-      12.0) echo "https://download.pytorch.org/whl/cu121" ;;
-      11.8) echo "https://download.pytorch.org/whl/cu118" ;;
+      13.*|12.9|12.8)
+        log "Driver CUDA $ver; using cu128 PyTorch (needed for Blackwell / sm_120)"
+        echo "https://download.pytorch.org/whl/cu128"
+        ;;
+      12.7|12.6|12.5|12.4)
+        echo "https://download.pytorch.org/whl/cu124"
+        ;;
+      12.3|12.2|12.1|12.0)
+        echo "https://download.pytorch.org/whl/cu121"
+        ;;
+      11.8)
+        echo "https://download.pytorch.org/whl/cu118"
+        ;;
       *)
         log "Unmapped CUDA Version $ver from nvidia-smi; defaulting to cu124"
         echo "https://download.pytorch.org/whl/cu124"
@@ -155,7 +171,32 @@ log "Upgrading pip"
 python -m pip install -U pip wheel
 
 log "Installing torch + torchvision"
-pip install torch torchvision --index-url "$TORCH_INDEX"
+pip install --upgrade torch torchvision --index-url "$TORCH_INDEX"
+
+log "Verifying GPU is usable by PyTorch"
+python - <<'PY'
+import sys
+import torch
+
+if not torch.cuda.is_available():
+    print("WARNING: torch.cuda.is_available() is False", file=sys.stderr)
+    sys.exit(0)
+name = torch.cuda.get_device_name(0)
+cap = torch.cuda.get_device_capability(0)
+print(f"GPU: {name} | capability sm_{cap[0]}{cap[1]} | torch {torch.__version__}")
+try:
+    torch.zeros(1, device="cuda", dtype=torch.float16)
+    print("CUDA smoke test: OK")
+except Exception as exc:
+    print(f"CUDA smoke test FAILED: {exc}", file=sys.stderr)
+    print(
+        "Blackwell (sm_120) GPUs need PyTorch built with CUDA 12.8+:\n"
+        "  pip install --upgrade torch torchvision --index-url https://download.pytorch.org/whl/cu128\n"
+        "Or re-run: TORCH_INDEX_URL=https://download.pytorch.org/whl/cu128 bash scripts/runpod_setup.sh --recreate",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+PY
 
 log "Installing requirements.txt"
 pip install -r requirements.txt

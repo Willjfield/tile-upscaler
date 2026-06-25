@@ -62,6 +62,9 @@ python -m venv .venv && source .venv/bin/activate
 # 2. Install torch matching the box's CUDA first (example: CUDA 12.4)
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
 
+# Blackwell GPUs (RTX 50xx, RTX PRO 4500, sm_120) need cu128 instead:
+# pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+
 # 3. The rest
 pip install -r requirements.txt
 bash scripts/install_pyrosm.sh   # local .osm.pbf reader (optional but recommended)
@@ -112,7 +115,15 @@ Optional flags:
 
 ```bash
 bash scripts/runpod_setup.sh --recreate --skip-pyrosm   # if you use Overpass only
-TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121 bash scripts/runpod_setup.sh --recreate
+TORCH_INDEX_URL=https://download.pytorch.org/whl/cu128 bash scripts/runpod_setup.sh --recreate
+```
+
+**Blackwell GPUs** (RTX 50-series, RTX PRO 4500, `sm_120`): the setup script
+auto-selects `cu128` PyTorch. If you installed `cu124` manually you will see
+`no kernel image is available for execution on the device` — upgrade torch:
+
+```bash
+pip install --upgrade torch torchvision --index-url https://download.pytorch.org/whl/cu128
 ```
 
 The script will:
