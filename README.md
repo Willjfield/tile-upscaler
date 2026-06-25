@@ -28,6 +28,8 @@ Methods compared:
 | C  | B + OSM-edge **ControlNet** | spatial + semantic |
 | (stretch) | [SGDM](https://github.com/wwangcece/SGDM) | purpose-built remote-sensing vector SR |
 
+**New to the methods?** See **[Methods A, B, and C — explained for non-experts](docs/methods-explained.md)** for a plain-language walkthrough of what each approach does, how they differ, and what to look for in the results.
+
 ### Cross-scale consistency (core requirement)
 
 Enforced three ways so zooming in feels seamless:
@@ -302,6 +304,7 @@ vector-conditioned path is experimental and may need extra training.
 | [`retile.py`](tile_upscaler/retile.py) | cut upscaled images into deeper-zoom XYZ tiles |
 | [`sgdm_runner.py`](tile_upscaler/sgdm_runner.py) | stretch: SGDM integration |
 | [`run_experiment.py`](run_experiment.py) | end-to-end orchestrator driven by `config.yaml` |
+| [`docs/methods-explained.md`](docs/methods-explained.md) | plain-language guide to methods A / B / C |
 | [`scripts/runpod_setup.sh`](scripts/runpod_setup.sh) | bootstrap venv + deps on a new RunPod pod |
 | [`scripts/runpod_s3_download.sh`](scripts/runpod_s3_download.sh) | download files from a RunPod volume via S3 |
 | [`scripts/install_pyrosm.sh`](scripts/install_pyrosm.sh) | install pyrosm (not in requirements.txt) |
