@@ -17,7 +17,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from tile_upscaler import colorfix, eval as ev, retile, tileio  # noqa: E402
 from tile_upscaler import tile_rank, upscale_controlnet as uc  # noqa: E402
 from tile_upscaler.tiles import (  # noqa: E402
-    Tile, child_tiles, lonlat_to_tile, neighbours, tile_bounds_3857,
+    Tile, ancestor_tile, child_tiles, lonlat_to_tile, neighbours,
+    pixel_factor_for_zoom_delta, plan_iterative_zoom_ladder, tile_bounds_3857,
     tile_bounds_lonlat, upscale_levels,
 )
 
@@ -50,6 +51,17 @@ def test_tile_math():
     assert len(neighbours(t, 1)) == 9
     assert upscale_levels(4) == 2 and upscale_levels(2) == 1
     print("ok test_tile_math")
+
+
+def test_iterative_zoom_ladder():
+    assert plan_iterative_zoom_ladder(18, 25, 4) == [18, 22, 25]
+    assert plan_iterative_zoom_ladder(18, 22, 4) == [18, 22]
+    assert plan_iterative_zoom_ladder(18, 26, 4) == [18, 22, 26]
+    assert pixel_factor_for_zoom_delta(4) == 16
+    assert pixel_factor_for_zoom_delta(3) == 8
+    t = Tile(22, 100, 200)
+    assert ancestor_tile(t, 18).key == Tile(18, 6, 12).key
+    print("ok test_iterative_zoom_ladder")
 
 
 def test_colorfix_reduces_drift():
@@ -142,12 +154,39 @@ def test_build_prompt_rich_tags():
     assert "brick buildings" in prompt
     assert "grey rooftops" in prompt
     assert "along Sauchiehall Street" in prompt
-    assert "on Rose Street" in prompt
     assert "multi-storey" in prompt
-    assert "grassy areas" in prompt
-    assert "tennis courts" in prompt
-    assert "historic building" in prompt
+    assert orm._clip_token_count(prompt) <= orm.CLIP_MAX_TOKENS
     print("ok test_build_prompt_rich_tags")
+
+
+def test_finalize_prompt_clip_limit():
+    from tile_upscaler import osm_render as orm
+
+    base = "high-resolution aerial orthophoto, top-down satellite view"
+    long_phrases = [
+        "scattered buildings with rooftops",
+        "apartment blocks",
+        "low-rise multi-storey buildings",
+        "residential street",
+        "service road",
+        "along Derby Street",
+        "along Craigmaddie Terrace Lane",
+        "on Parkgrove Terrace",
+        "on Bentinck Street",
+        "asphalt roads",
+        "cobblestone",
+        "residential housing",
+        "grassy areas",
+        "trees, grass and vegetation",
+        "including Dom Polski and Kelvingrove House apartment",
+        "tennis courts",
+        "historic building",
+        "place of worship",
+    ]
+    prompt = orm._finalize_prompt(base, long_phrases)
+    assert orm._clip_token_count(prompt) <= orm.CLIP_MAX_TOKENS
+    assert prompt.startswith(base)
+    print("ok test_finalize_prompt_clip_limit")
 
 
 def test_ingest_tags():
@@ -246,12 +285,14 @@ def test_tile_rank_orders_by_divergence():
 
 if __name__ == "__main__":
     test_tile_math()
+    test_iterative_zoom_ladder()
     test_colorfix_reduces_drift()
     test_retile_grid()
     test_blend_helpers()
     test_consistency_metric()
     test_degradation_roundtrip()
     test_build_prompt_rich_tags()
+    test_finalize_prompt_clip_limit()
     test_ingest_tags()
     test_building_edge_control_image()
     test_select_tiles_by_keys()

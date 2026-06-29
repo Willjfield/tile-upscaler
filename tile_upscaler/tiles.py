@@ -161,6 +161,45 @@ def upscale_levels(factor: int) -> int:
     return levels
 
 
+def pixel_factor_for_zoom_delta(delta_z: int) -> int:
+    """Linear pixel upscale factor for ``delta_z`` slippy-map zoom levels (e.g. 2 -> 4x)."""
+    if delta_z <= 0:
+        raise ValueError(f"zoom delta must be positive, got {delta_z}")
+    return 2 ** delta_z
+
+
+def ancestor_tile(tile: Tile, z_ancestor: int) -> Tile:
+    """Return the ``z_ancestor`` tile that contains ``tile``."""
+    if tile.z < z_ancestor:
+        raise ValueError(f"tile z={tile.z} is shallower than ancestor z={z_ancestor}")
+    if tile.z == z_ancestor:
+        return tile
+    scale = 2 ** (tile.z - z_ancestor)
+    return Tile(z_ancestor, tile.x // scale, tile.y // scale)
+
+
+def plan_iterative_zoom_ladder(initial_z: int, final_z: int, zoom_step: int) -> List[int]:
+    """Plan zoom checkpoints for layered upscaling.
+
+    Each full step advances by ``zoom_step`` levels. The last step stops exactly
+    at ``final_z`` when it would otherwise overshoot.
+
+    Example: ``plan_iterative_zoom_ladder(18, 25, 4)`` -> ``[18, 22, 25]``.
+    """
+    if zoom_step <= 0:
+        raise ValueError(f"zoom_step must be positive, got {zoom_step}")
+    if initial_z >= final_z:
+        raise ValueError(f"initial_z ({initial_z}) must be less than final_z ({final_z})")
+
+    ladder = [initial_z]
+    z = initial_z
+    while z < final_z:
+        next_full = z + zoom_step
+        z = final_z if next_full >= final_z else next_full
+        ladder.append(z)
+    return ladder
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------

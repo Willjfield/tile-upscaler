@@ -241,6 +241,40 @@ Outputs:
 - `out/sheets/` - side-by-side comparison panels
 - `out-results.zip` - *(optional)* entire `out/` tree, if `paths.archive_out` is set
 
+### Iterative multi-zoom upscaling
+
+For targets beyond a single pass (e.g. z18 → z25), enable layered upscaling in
+`config.yaml`. Each layer reuses the same diffusion/baseline settings; only the
+per-layer pixel factor changes (`2 ** zoom_delta`).
+
+```yaml
+upscale:
+  factor: 4          # also the default zoom_step when iterative is on
+  iterative:
+    enabled: true
+    initial_zoom: 18   # optional — auto-detected from paths.raster
+    final_zoom: 25
+    zoom_step: 4       # full layers advance this many zoom levels
+```
+
+With `initial_zoom: 18`, `final_zoom: 25`, and `zoom_step: 4`, the ladder is
+**18 → 22 → 25**: a full +4 step, then a partial +3 step to land exactly on the
+target. Artifacts live under `out/iterative/layers/z{from}_z{to}/`; the final
+layer is mirrored to `out/up/` and `out/serve/` like a normal run.
+
+**Tile explosion:** a +4 zoom step turns each source tile into a 16×16 grid
+(256 child tiles). Use `--limit` or `--best N` for smoke tests before a full
+AOI run. Later layers automatically keep only descendants of the selected tiles.
+
+```bash
+python run_experiment.py --limit 1   # one z18 tile through the full ladder
+python run_experiment.py --best 3 --skip-osm
+```
+
+Note: in single-pass mode `upscale.factor` is a **pixel multiplier** (4 = +2
+zoom). In iterative mode `zoom_step` is **zoom levels per full layer** (4 =
++4 zoom, 16× pixels). The two meanings are related but not identical.
+
 ## Run steps individually
 
 Every module is runnable on its own:
@@ -307,6 +341,7 @@ vector-conditioned path is experimental and may need extra training.
 | [`retile.py`](tile_upscaler/retile.py) | cut upscaled images into deeper-zoom XYZ tiles |
 | [`sgdm_runner.py`](tile_upscaler/sgdm_runner.py) | stretch: SGDM integration |
 | [`run_experiment.py`](run_experiment.py) | end-to-end orchestrator driven by `config.yaml` |
+| [`iterative.py`](tile_upscaler/iterative.py) | multi-layer z→z upscaling ladder (18→22→25, …) |
 | [`docs/methods-explained.md`](docs/methods-explained.md) | plain-language guide to methods A / B / C |
 | [`scripts/rank_tiles.py`](scripts/rank_tiles.py) | rank tiles by A/B/C divergence → `tile_rankings.json` |
 | [`scripts/runpod_setup.sh`](scripts/runpod_setup.sh) | bootstrap venv + deps on a new RunPod pod |

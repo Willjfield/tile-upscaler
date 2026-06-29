@@ -18,7 +18,7 @@ Optionally emit 512 px "retina"/@2x tiles instead of 256 px (``--tile-size``).
 from __future__ import annotations
 
 import os
-from typing import Optional
+from typing import Optional, Sequence
 
 from . import tileio
 from .tiles import Tile, child_tiles, upscale_levels
@@ -59,11 +59,11 @@ def run_tree(
     factor: int = 4,
     tile_size: int = 256,
     limit: Optional[int] = None,
+    tile_keys: Optional[Sequence[str]] = None,
 ) -> int:
     """Retile every upscaled image under ``src_root`` into ``out_root``."""
     tiles = tileio.find_tiles(src_root)
-    if limit:
-        tiles = tiles[:limit]
+    tiles = tileio.select_tiles(tiles, limit=limit, tile_keys=tile_keys)
     total = 0
     for tf in tiles:
         img = tileio.load_image(tf.path)

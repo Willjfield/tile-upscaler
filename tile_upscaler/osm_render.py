@@ -759,9 +759,37 @@ def render_building_edge_control_image(
     return canvas
 
 
+# SDXL conditions on OpenAI CLIP ViT-L/14 text (77 tokens including specials).
+CLIP_TOKENIZER_ID = "openai/clip-vit-large-patch14"
+CLIP_MAX_TOKENS = 77
+
+_CLIP_TOKENIZER = None
+
+
 # ---------------------------------------------------------------------------
 # Prompt generation
 # ---------------------------------------------------------------------------
+def _clip_tokenizer():
+    """Lazy-load the CLIP tokenizer used by SDXL (cached after first call)."""
+    global _CLIP_TOKENIZER
+    if _CLIP_TOKENIZER is None:
+        from transformers import CLIPTokenizer
+
+        _CLIP_TOKENIZER = CLIPTokenizer.from_pretrained(CLIP_TOKENIZER_ID)
+    return _CLIP_TOKENIZER
+
+
+def _clip_token_count(text: str) -> int:
+    """Return CLIP token length for ``text`` (including special tokens)."""
+    try:
+        tok = _clip_tokenizer()
+        return len(tok(text, add_special_tokens=True, truncation=False).input_ids)
+    except Exception:
+        # Offline / no cache: conservative estimate so prompts stay under the limit.
+        words = text.replace(",", " ,").split()
+        return int(len(words) * 1.35) + 2
+
+
 def _top_labels(counter: Dict[str, int], label_map: Dict[str, str], limit: int = 3) -> List[str]:
     ranked = sorted(counter.items(), key=lambda item: (-item[1], item[0]))
     out: List[str] = []
@@ -811,15 +839,36 @@ def _street_phrases(rollup: TagRollup) -> List[str]:
     return phrases[:3]
 
 
-def _finalize_prompt(base: str, phrases: List[str], max_chars: int = 480) -> str:
+def _finalize_prompt(
+    base: str,
+    phrases: List[str],
+    max_tokens: int = CLIP_MAX_TOKENS,
+) -> str:
+    """Join ``phrases`` into a CLIP-safe SDXL prompt (<= ``max_tokens`` tokens)."""
     phrases = _dedupe_phrases(phrases)
     suffix = ", sharp detail, realistic textures"
-    while phrases:
-        prompt = f"{base}, {', '.join(phrases)}{suffix}"
-        if len(prompt) <= max_chars:
+    kept = list(phrases)
+    with_suffix = True
+
+    while True:
+        body = ", ".join(kept)
+        if body:
+            prompt = f"{base}, {body}"
+        else:
+            prompt = base
+        if with_suffix:
+            prompt = f"{prompt}{suffix}"
+
+        if _clip_token_count(prompt) <= max_tokens:
             return prompt
-        phrases.pop()
-    return f"{base}{suffix}"
+
+        if with_suffix:
+            with_suffix = False
+            continue
+        if kept:
+            kept.pop()
+            continue
+        return base
 
 
 def build_prompt(features: TileFeatures, base: str = "high-resolution aerial orthophoto, top-down satellite view") -> str:

@@ -207,6 +207,37 @@ def main(argv=None) -> int:
     device = cfg["upscale"].get("device")
     os.makedirs(out, exist_ok=True)
 
+    iterative_cfg = (cfg.get("upscale") or {}).get("iterative") or {}
+    if iterative_cfg.get("enabled"):
+        from tile_upscaler import iterative as it
+
+        hr_root = (cfg.get("eval") or {}).get("hr_root")
+        if hr_root:
+            print("Note: iterative mode ignores eval.hr_root degradation test for now")
+        lr_root = paths["raster"]
+        tile_keys = _resolve_tile_keys(
+            lr_root,
+            best=args.best,
+            limit=args.limit,
+            rankings_path=args.rankings,
+            out_dir=out,
+        )
+        it.run_iterative(
+            cfg,
+            paths=paths,
+            device=device,
+            tile_keys=tile_keys,
+            skip_osm=args.skip_osm,
+            render_osm_fn=lambda lr, osm, size, edge, keys: _render_osm(
+                lr, osm, paths.get("osm_pbf"), size, edge, keys,
+            ),
+            run_evaluation_fn=_run_evaluation,
+        )
+        archive_path = args.archive_out or paths.get("archive_out")
+        if archive_path:
+            _archive_out(out, archive_path)
+        return 0
+
     # --- 1. resolve LR / HR roots ---------------------------------------------
     hr_root = (cfg.get("eval") or {}).get("hr_root")
     if hr_root:

@@ -11,8 +11,13 @@ paths:
 
 # Upscaling settings.
 upscale:
-  factor: 4             # 2 (z+1) or 4 (z+2)
+  factor: 4             # single-pass: pixel multiplier (4 = +2 zoom). Iterative: default zoom_step.
   device: cuda          # cuda | cpu | mps
+  iterative:
+    enabled: false
+    initial_zoom: null   # default: detect from paths.raster
+    final_zoom: null     # required when enabled, e.g. 25
+    zoom_step: 4         # full layers advance this many zoom levels (18->22->25)
 
 # Diffusion (variant B/C) knobs - tuned for "texture-only" hallucination.
 diffusion:
