@@ -15,8 +15,8 @@ upscale:
 
 diffusion:
   steps: 35
-  strength: 0.55              # was 0.4
-  guidance_scale: 8.0         # was 6.0 — stronger OSM text
+  strength: 0.65              # was 0.4
+  guidance_scale: 9.0         # was 6.0 — stronger OSM text
   tile_cond_scale: 0.70       # was 0.9 — less locked to photo
   osm_cond_scale: 0.65        # was 0.45 — stronger building outlines (C)
   seed: 1234
