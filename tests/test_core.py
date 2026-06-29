@@ -15,7 +15,7 @@ from PIL import Image
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from tile_upscaler import colorfix, eval as ev, retile, tileio  # noqa: E402
-from tile_upscaler import upscale_controlnet as uc  # noqa: E402
+from tile_upscaler import tile_rank, upscale_controlnet as uc  # noqa: E402
 from tile_upscaler.tiles import (  # noqa: E402
     Tile, child_tiles, lonlat_to_tile, neighbours, tile_bounds_3857,
     tile_bounds_lonlat, upscale_levels,
@@ -206,6 +206,44 @@ def test_building_edge_control_image():
     print("ok test_building_edge_control_image")
 
 
+def test_select_tiles_by_keys():
+    tiles = [
+        tileio.TileFile(Tile(18, 1, 1), "a"),
+        tileio.TileFile(Tile(18, 1, 2), "b"),
+        tileio.TileFile(Tile(18, 1, 3), "c"),
+    ]
+    picked = tileio.select_tiles(tiles, tile_keys=["18/1/3", "18/1/1"])
+    assert [tf.tile.key for tf in picked] == ["18/1/3", "18/1/1"]
+    print("ok test_select_tiles_by_keys")
+
+
+def test_tile_rank_orders_by_divergence():
+    with tempfile.TemporaryDirectory() as tmp:
+        out = os.path.join(tmp, "out")
+        up = os.path.join(out, "up")
+        tile = Tile(18, 9, 9)
+        for sub, color in [
+            ("A_realesrgan", (40, 40, 40)),
+            ("B_controlnet_text", (200, 40, 40)),
+            ("C_controlnet_osm", (40, 200, 40)),
+        ]:
+            root = os.path.join(up, sub)
+            tileio.write_tile(root, tile, Image.new("RGB", (64, 64), color))
+
+        quiet = Tile(18, 8, 8)
+        for sub in ("A_realesrgan", "B_controlnet_text", "C_controlnet_osm"):
+            tileio.write_tile(os.path.join(up, sub), quiet, Image.new("RGB", (64, 64), (100, 100, 100)))
+
+        rows = tile_rank.rank_tiles(out, compare_size=64)
+        assert rows[0].tile == "18/9/9"
+        assert rows[0].mean_pairwise_mae > rows[-1].mean_pairwise_mae
+
+        dest = tile_rank.write_rankings(out, rows)
+        keys = tile_rank.best_tile_keys(dest, 1)
+        assert keys == ["18/9/9"]
+    print("ok test_tile_rank_orders_by_divergence")
+
+
 if __name__ == "__main__":
     test_tile_math()
     test_colorfix_reduces_drift()
@@ -216,4 +254,6 @@ if __name__ == "__main__":
     test_build_prompt_rich_tags()
     test_ingest_tags()
     test_building_edge_control_image()
+    test_select_tiles_by_keys()
+    test_tile_rank_orders_by_divergence()
     print("\nALL CORE TESTS PASSED")

@@ -23,13 +23,14 @@ from __future__ import annotations
 import argparse
 import os
 import shutil
-from typing import Dict, Optional
+from typing import Dict, List, Optional, Sequence
 
 import yaml
 
 from tile_upscaler import eval as ev
 from tile_upscaler import osm_render, retile, tileio
 from tile_upscaler import upscale_baseline, upscale_controlnet
+from tile_upscaler.tile_rank import best_tile_keys, default_rankings_path
 
 
 def _load_config(path: str) -> dict:
@@ -44,12 +45,36 @@ def _first_tile_size(root: str) -> int:
     return tileio.load_image(tiles[0].path).width
 
 
+def _resolve_tile_keys(
+    lr_root: str,
+    *,
+    best: Optional[int],
+    limit: Optional[int],
+    rankings_path: Optional[str],
+    out_dir: str,
+) -> Optional[List[str]]:
+    """Return an ordered tile-key subset, or None to process every tile."""
+    if best is not None:
+        if limit is not None:
+            print("Note: --best takes precedence over --limit")
+        path = rankings_path or default_rankings_path(out_dir)
+        keys = best_tile_keys(path, best)
+        print(f"Using top {len(keys)} ranked tile(s) from {path}:")
+        for key in keys:
+            print(f"  {key}")
+        return keys
+    if limit is not None:
+        return [tf.tile.key for tf in tileio.find_tiles(lr_root)[:limit]]
+    return None
+
+
 def _render_osm(
     lr_root: str,
     out_osm: str,
     pbf: Optional[str],
     control_size: int,
     edge_line_width_px: float = 2.0,
+    tile_keys: Optional[Sequence[str]] = None,
 ) -> str:
     """Render OSM control images for every LR tile; return prompts.json path."""
     import json
@@ -64,7 +89,7 @@ def _render_osm(
         print("OSM source: Overpass API (no local pbf configured)")
 
     prompts: Dict[str, str] = {}
-    tiles = tileio.find_tiles(lr_root)
+    tiles = tileio.select_tiles(tileio.find_tiles(lr_root), tile_keys=tile_keys)
     edges_root = os.path.join(out_osm, "edges")
     for i, tf in enumerate(tiles, 1):
         try:
@@ -112,7 +137,19 @@ def _archive_out(out_dir: str, archive_path: str) -> str:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Run the full upscaling experiment")
     parser.add_argument("--config", default="config.yaml")
-    parser.add_argument("--limit", type=int, default=None, help="Cap tiles per method (debug)")
+    parser.add_argument("--limit", type=int, default=None, help="Cap tiles per method (first N in sort order)")
+    parser.add_argument(
+        "--best",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Process top N tiles from tile_rankings.json (see scripts/rank_tiles.py)",
+    )
+    parser.add_argument(
+        "--rankings",
+        default=None,
+        help="Rankings JSON for --best (default: <paths.out>/tile_rankings.json)",
+    )
     parser.add_argument("--skip-osm", action="store_true", help="Reuse existing OSM render")
     parser.add_argument(
         "--archive-out",
@@ -144,6 +181,13 @@ def main(argv=None) -> int:
     if args.eval_only:
         hr_root = (cfg.get("eval") or {}).get("hr_root")
         lr_root = os.path.join(out, "lr") if hr_root else paths["raster"]
+        tile_keys = _resolve_tile_keys(
+            lr_root,
+            best=args.best,
+            limit=args.limit,
+            rankings_path=args.rankings,
+            out_dir=out,
+        )
         up_root = os.path.join(out, "up")
         if not os.path.isdir(up_root):
             raise SystemExit(f"No upscaled outputs at {up_root}; run upscaling first")
@@ -155,7 +199,7 @@ def main(argv=None) -> int:
         if not produced:
             raise SystemExit(f"No method directories under {up_root}")
         print(f"Eval-only: found {len(produced)} method(s) in {up_root}")
-        _run_evaluation(cfg, paths, produced, lr_root, hr_root, args.limit)
+        _run_evaluation(cfg, paths, produced, lr_root, hr_root, tile_keys=tile_keys)
         archive_path = args.archive_out or paths.get("archive_out")
         if archive_path:
             _archive_out(out, archive_path)
@@ -173,6 +217,14 @@ def main(argv=None) -> int:
         lr_root = paths["raster"]
         print(f"No HR provided; upscaling source raster tiles directly ({lr_root})")
 
+    tile_keys = _resolve_tile_keys(
+        lr_root,
+        best=args.best,
+        limit=args.limit,
+        rankings_path=args.rankings,
+        out_dir=out,
+    )
+
     lr_size = _first_tile_size(lr_root)
     target_size = lr_size * factor
 
@@ -188,6 +240,7 @@ def main(argv=None) -> int:
             paths.get("osm_pbf"),
             target_size,
             edge_line_width_px=float(osm_cfg.get("edge_line_width_px", 2.0)),
+            tile_keys=tile_keys,
         )
 
     # --- 3. run methods -------------------------------------------------------
@@ -198,13 +251,19 @@ def main(argv=None) -> int:
     if m.get("baseline_realesrgan"):
         dst = os.path.join(out, "up", "A_realesrgan")
         print("\n=== Method A: Real-ESRGAN (no vector) ===")
-        upscale_baseline.run_tree(lr_root, dst, "realesrgan", factor, device, args.limit)
+        upscale_baseline.run_tree(
+            lr_root, dst, "realesrgan", factor, device,
+            tile_keys=tile_keys,
+        )
         produced["A_realesrgan"] = dst
 
     if m.get("baseline_swin2sr"):
         dst = os.path.join(out, "up", "A_swin2sr")
         print("\n=== Method A2: Swin2SR (no vector) ===")
-        upscale_baseline.run_tree(lr_root, dst, "swin2sr", factor, device, args.limit)
+        upscale_baseline.run_tree(
+            lr_root, dst, "swin2sr", factor, device,
+            tile_keys=tile_keys,
+        )
         produced["A_swin2sr"] = dst
 
     def _diff_config(use_osm: bool) -> upscale_controlnet.UpscaleConfig:
@@ -226,7 +285,8 @@ def main(argv=None) -> int:
         print("\n=== Method B: SDXL + Tile ControlNet + OSM text prompt ===")
         upscale_controlnet.run_tree(
             lr_root, dst, _diff_config(use_osm=False),
-            osm_root=osm_tree, prompts_path=prompts_path, limit=args.limit,
+            osm_root=osm_tree, prompts_path=prompts_path,
+            tile_keys=tile_keys,
         )
         produced["B_controlnet_text"] = dst
 
@@ -235,7 +295,8 @@ def main(argv=None) -> int:
         print("\n=== Method C: + OSM-edge ControlNet (spatial vector guidance) ===")
         upscale_controlnet.run_tree(
             lr_root, dst, _diff_config(use_osm=True),
-            osm_root=osm_tree, prompts_path=prompts_path, limit=args.limit,
+            osm_root=osm_tree, prompts_path=prompts_path,
+            tile_keys=tile_keys,
         )
         produced["C_controlnet_osm"] = dst
 
@@ -244,7 +305,7 @@ def main(argv=None) -> int:
         serve = os.path.join(out, "serve", name)
         retile.run_tree(src, serve, factor=factor)
 
-    _run_evaluation(cfg, paths, produced, lr_root, hr_root, args.limit)
+    _run_evaluation(cfg, paths, produced, lr_root, hr_root, tile_keys=tile_keys)
 
     archive_path = args.archive_out or paths.get("archive_out")
     if archive_path:
@@ -259,7 +320,7 @@ def _run_evaluation(
     produced: Dict[str, str],
     lr_root: str,
     hr_root: Optional[str],
-    limit: Optional[int],
+    tile_keys: Optional[Sequence[str]] = None,
 ) -> None:
     """Run metrics and comparison sheets for upscaled method trees."""
     out = paths["out"]
@@ -276,7 +337,7 @@ def _run_evaluation(
     if (cfg.get("eval") or {}).get("comparison_sheets") and produced:
         ev.comparison_sheets(
             lr_root, produced, os.path.join(out, "sheets"),
-            hr_root=hr_root, limit=limit,
+            hr_root=hr_root, tile_keys=tile_keys,
         )
 
     print("\nDone. Upscaled trees in out/up/, servable tiles in out/serve/, "

@@ -33,7 +33,7 @@ import json
 import os
 import time
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -260,6 +260,7 @@ def run_tree(
     prompts_path: Optional[str] = None,
     default_prompt: str = "high-resolution aerial orthophoto, top-down satellite view, sharp realistic detail",
     limit: Optional[int] = None,
+    tile_keys: Optional[Sequence[str]] = None,
 ) -> int:
     """Upscale every raster tile under ``src_root`` into ``out_root``.
 
@@ -274,9 +275,9 @@ def run_tree(
         with open(prompts_path) as fh:
             prompts = json.load(fh)
 
-    tiles = tileio.find_tiles(src_root)
-    if limit:
-        tiles = tiles[:limit]
+    tiles = tileio.select_tiles(
+        tileio.find_tiles(src_root), limit=limit, tile_keys=tile_keys,
+    )
 
     done = 0
     t0 = time.time()

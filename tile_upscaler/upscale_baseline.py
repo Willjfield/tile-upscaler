@@ -19,7 +19,7 @@ tiles for serving).
 from __future__ import annotations
 
 import time
-from typing import Optional
+from typing import Optional, Sequence
 
 import numpy as np
 
@@ -132,12 +132,13 @@ def run_tree(
     outscale: int = 4,
     device: Optional[str] = None,
     limit: Optional[int] = None,
+    tile_keys: Optional[Sequence[str]] = None,
 ) -> int:
     """Upscale every tile under ``src_root`` into ``out_root``. Returns count."""
     backend = make_backend(backend_name, scale=outscale, device=device)
-    tiles = tileio.find_tiles(src_root)
-    if limit:
-        tiles = tiles[:limit]
+    tiles = tileio.select_tiles(
+        tileio.find_tiles(src_root), limit=limit, tile_keys=tile_keys,
+    )
 
     done = 0
     t0 = time.time()

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Iterator, List, Optional
+from typing import Iterator, List, Optional, Sequence
 
 from .tiles import Tile
 
@@ -69,6 +69,23 @@ def load_image(path: str):
 
 def iter_tiles(root: str) -> Iterator[TileFile]:
     yield from find_tiles(root)
+
+
+def select_tiles(
+    tiles: List[TileFile],
+    *,
+    limit: Optional[int] = None,
+    tile_keys: Optional[Sequence[str]] = None,
+) -> List[TileFile]:
+    """Subset ``tiles`` by explicit keys (preserving key order) or a leading limit."""
+    if tile_keys is not None:
+        order = {key: idx for idx, key in enumerate(tile_keys)}
+        selected = [tf for tf in tiles if tf.tile.key in order]
+        selected.sort(key=lambda tf: order[tf.tile.key])
+        return selected
+    if limit:
+        return tiles[:limit]
+    return tiles
 
 
 def find_companion(root: Optional[str], tile: Tile) -> Optional[str]:

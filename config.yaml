@@ -13,19 +13,17 @@ upscale:
   factor: 4 # 2 (z+1) or 4 (z+2)
   device: cuda # cuda | cpu | mps
 
-# Diffusion (variant B/C) knobs - tuned for "texture-only" hallucination.
 diffusion:
-  steps: 30
-  strength: 0.4 # low denoise: refine, don't repaint
-  guidance_scale: 6.0
-  tile_cond_scale: 0.9 # high: follow source contours
-  osm_cond_scale: 0.45 # OSM ControlNet weight (variant C)
+  steps: 35
+  strength: 0.55              # was 0.4
+  guidance_scale: 8.0         # was 6.0 — stronger OSM text
+  tile_cond_scale: 0.70       # was 0.9 — less locked to photo
+  osm_cond_scale: 0.65        # was 0.45 — stronger building outlines (C)
   seed: 1234
-  color_fix: wavelet # wavelet | adain | none
+  color_fix: adain            # or `none` for maximum freedom
 
-# OSM vector guidance (control images + prompts).
 osm:
-  edge_line_width_px: 2.0 # building-outline stroke width in the edges/ control image
+  edge_line_width_px: 3.0
 
 # Which methods to run.
 methods:

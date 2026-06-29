@@ -33,7 +33,7 @@ from __future__ import annotations
 import csv
 import os
 from dataclasses import dataclass, asdict
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -264,6 +264,7 @@ def comparison_sheets(
     out_dir: str,
     hr_root: Optional[str] = None,
     limit: Optional[int] = None,
+    tile_keys: Optional[Sequence[str]] = None,
 ) -> int:
     """Write side-by-side panels: [LR(bicubic)] [variant...] [HR?] per tile."""
     from PIL import Image, ImageDraw
@@ -272,9 +273,7 @@ def comparison_sheets(
     variant_index = {name: {tf.tile.key: tf for tf in tileio.find_tiles(root)} for name, root in variants.items()}
     hr_index = {tf.tile.key: tf for tf in tileio.find_tiles(hr_root)} if hr_root else {}
 
-    lr_tiles = tileio.find_tiles(lr_root)
-    if limit:
-        lr_tiles = lr_tiles[:limit]
+    lr_tiles = tileio.select_tiles(tileio.find_tiles(lr_root), limit=limit, tile_keys=tile_keys)
 
     panel = 512
     made = 0

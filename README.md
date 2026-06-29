@@ -229,6 +229,9 @@ need individual files.
 cp config.example.yaml config.yaml      # edit paths + AOIs
 python run_experiment.py --config config.yaml
 # add --limit 8 for a quick smoke test on a few tiles
+# or pick showcase tiles after a full A/B/C run:
+python scripts/rank_tiles.py            # writes out/tile_rankings.json
+python run_experiment.py --best 5 --skip-osm
 ```
 
 Outputs:
@@ -305,6 +308,7 @@ vector-conditioned path is experimental and may need extra training.
 | [`sgdm_runner.py`](tile_upscaler/sgdm_runner.py) | stretch: SGDM integration |
 | [`run_experiment.py`](run_experiment.py) | end-to-end orchestrator driven by `config.yaml` |
 | [`docs/methods-explained.md`](docs/methods-explained.md) | plain-language guide to methods A / B / C |
+| [`scripts/rank_tiles.py`](scripts/rank_tiles.py) | rank tiles by A/B/C divergence → `tile_rankings.json` |
 | [`scripts/runpod_setup.sh`](scripts/runpod_setup.sh) | bootstrap venv + deps on a new RunPod pod |
 | [`scripts/runpod_s3_download.sh`](scripts/runpod_s3_download.sh) | download files from a RunPod volume via S3 |
 | [`scripts/install_pyrosm.sh`](scripts/install_pyrosm.sh) | install pyrosm (not in requirements.txt) |
