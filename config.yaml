@@ -13,9 +13,9 @@ upscale:
   factor: 4 # single-pass: pixel multiplier (4 = +2 zoom). Iterative: default zoom_step.
   device: cuda # cuda | cpu | mps
   iterative:
-    enabled: false
-    initial_zoom: null   # default: detect from paths.raster
-    final_zoom: null     # required when enabled, e.g. 25
+    enabled: true
+    initial_zoom: 18   # default: detect from paths.raster
+    final_zoom: 24     # required when enabled, e.g. 25
     zoom_step: 4 
 
 diffusion:
