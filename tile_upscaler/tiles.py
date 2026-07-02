@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Iterable, Iterator, List, Tuple
+from typing import Iterable, Iterator, List, Sequence, Tuple, Union
 
 # Web Mercator constants (EPSG:3857)
 EARTH_RADIUS_M = 6378137.0
@@ -106,6 +106,43 @@ def lonlat_to_3857(lon: float, lat: float) -> Tuple[float, float]:
 # ---------------------------------------------------------------------------
 # AOI enumeration
 # ---------------------------------------------------------------------------
+def parse_bbox(value: Union[str, Sequence[float]]) -> Bounds:
+    """Parse ``west,south,east,north`` from a comma string or numeric sequence."""
+    if isinstance(value, str):
+        parts = [float(p) for p in value.replace(" ", "").split(",")]
+    else:
+        parts = [float(p) for p in value]
+    if len(parts) != 4:
+        raise ValueError("bbox must be west,south,east,north (four numbers)")
+    west, south, east, north = parts
+    if west >= east or south >= north:
+        raise ValueError(f"invalid bbox: west={west}, south={south}, east={east}, north={north}")
+    return west, south, east, north
+
+
+def bounds_intersect(a: Bounds, b: Bounds) -> bool:
+    """Return True when two lon/lat boxes overlap (edges touching counts)."""
+    aw, a_s, ae, an = a
+    bw, b_s, be, bn = b
+    return not (ae < bw or be < aw or an < b_s or bn < a_s)
+
+
+def tile_intersects_bbox(tile: Tile, bbox: Bounds) -> bool:
+    """Return True when ``tile`` overlaps ``bbox`` (west,south,east,north deg)."""
+    return bounds_intersect(tile_bounds_lonlat(tile), bbox)
+
+
+def aoi_bbox_from_config(cfg: dict, name: str) -> Bounds:
+    """Look up ``aois[].bbox`` by ``name``."""
+    for aoi in cfg.get("aois") or []:
+        if aoi.get("name") == name:
+            raw = aoi.get("bbox")
+            if not raw:
+                raise ValueError(f"AOI {name!r} has no bbox in config")
+            return parse_bbox(raw)
+    raise ValueError(f"unknown AOI {name!r} (not found in config aois)")
+
+
 def tiles_for_bbox(bbox: Bounds, z: int) -> List[Tile]:
     """Enumerate every tile at zoom ``z`` covering a lon/lat bbox.
 
@@ -204,10 +241,7 @@ def plan_iterative_zoom_ladder(initial_z: int, final_z: int, zoom_step: int) -> 
 # CLI
 # ---------------------------------------------------------------------------
 def _parse_bbox(text: str) -> Bounds:
-    parts = [float(p) for p in text.replace(" ", "").split(",")]
-    if len(parts) != 4:
-        raise ValueError("bbox must be 'west,south,east,north'")
-    return parts[0], parts[1], parts[2], parts[3]
+    return parse_bbox(text)
 
 
 def main(argv: Iterable[str] | None = None) -> int:

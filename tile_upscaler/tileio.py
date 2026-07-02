@@ -11,7 +11,7 @@ import os
 from dataclasses import dataclass
 from typing import Iterator, List, Optional, Sequence
 
-from .tiles import Tile
+from .tiles import Bounds, Tile, tile_intersects_bbox
 
 IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp")
 
@@ -71,13 +71,21 @@ def iter_tiles(root: str) -> Iterator[TileFile]:
     yield from find_tiles(root)
 
 
+def filter_tiles_by_bbox(tiles: List[TileFile], bbox: Bounds) -> List[TileFile]:
+    """Keep tiles whose geographic bounds intersect ``bbox`` (preserves order)."""
+    return [tf for tf in tiles if tile_intersects_bbox(tf.tile, bbox)]
+
+
 def select_tiles(
     tiles: List[TileFile],
     *,
     limit: Optional[int] = None,
     tile_keys: Optional[Sequence[str]] = None,
+    bbox: Optional[Bounds] = None,
 ) -> List[TileFile]:
-    """Subset ``tiles`` by explicit keys (preserving key order) or a leading limit."""
+    """Subset ``tiles`` by bbox, explicit keys (preserving key order), or a leading limit."""
+    if bbox is not None:
+        tiles = filter_tiles_by_bbox(tiles, bbox)
     if tile_keys is not None:
         order = {key: idx for idx, key in enumerate(tile_keys)}
         selected = [tf for tf in tiles if tf.tile.key in order]

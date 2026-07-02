@@ -10,13 +10,13 @@ paths:
   archive_out: out-results.zip # e.g. out-results.zip — zip out/ when the run finishes (RunPod download)
 # Upscaling settings.
 upscale:
-  factor: 4 # single-pass: pixel multiplier (4 = +2 zoom). Iterative: default zoom_step.
+  factor: 2 # single-pass: pixel multiplier (4 = +2 zoom). Iterative: default zoom_step.
   device: cuda # cuda | cpu | mps
   iterative:
     enabled: true
     initial_zoom: 18   # default: detect from paths.raster
-    final_zoom: 24     # required when enabled, e.g. 25
-    zoom_step: 4 
+    final_zoom: 22     # required when enabled, e.g. 25
+    zoom_step: 1
 
 diffusion:
   steps: 35
@@ -32,9 +32,9 @@ osm:
 
 # Which methods to run.
 methods:
-  baseline_realesrgan: true # A: no vector
+  baseline_realesrgan: false # A: no vector
   baseline_swin2sr: false
-  controlnet_text: true # B: tile ControlNet + OSM text prompt
+  controlnet_text: false # B: tile ControlNet + OSM text prompt
   controlnet_osm: true # C: B + OSM-edge ControlNet
 
 # Sample areas of interest. Pick small, contrasting land types so we can see
@@ -44,6 +44,11 @@ aois:
   - name: glasgow
     bbox: [-4.28516, 55.86537, -4.28008, 55.86762] # dense urban
     zoom: 18
+
+# Optional: only process raster tiles intersecting this area (see README).
+filter:
+  bbox: [-4.282849242552743,55.86571835056631,-4.280120750740139,55.867193553470855]
+  aoi: glasgow # e.g. glasgow — uses aois[].bbox for that name
 
 # Evaluation: if you have genuine high-zoom (HR) tiles, point to them to enable
 # the degradation ground-truth test (PSNR/SSIM/LPIPS). Otherwise leave null and

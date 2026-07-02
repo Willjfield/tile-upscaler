@@ -229,6 +229,10 @@ need individual files.
 cp config.example.yaml config.yaml      # edit paths + AOIs
 python run_experiment.py --config config.yaml
 # add --limit 8 for a quick smoke test on a few tiles
+# restrict to a smaller area (intersects on-disk tiles only):
+#   filter.aoi: glasgow   or   filter.bbox: [west,south,east,north]
+#   python run_experiment.py --aoi glasgow
+#   python run_experiment.py --bbox -4.283,-55.867,-4.281,-55.866
 # or pick showcase tiles after a full A/B/C run:
 python scripts/rank_tiles.py            # writes out/tile_rankings.json
 python run_experiment.py --best 5 --skip-osm

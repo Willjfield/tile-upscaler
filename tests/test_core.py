@@ -17,9 +17,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from tile_upscaler import colorfix, eval as ev, retile, tileio  # noqa: E402
 from tile_upscaler import tile_rank, upscale_controlnet as uc  # noqa: E402
 from tile_upscaler.tiles import (  # noqa: E402
-    Tile, ancestor_tile, child_tiles, lonlat_to_tile, neighbours,
-    pixel_factor_for_zoom_delta, plan_iterative_zoom_ladder, tile_bounds_3857,
-    tile_bounds_lonlat, upscale_levels,
+    Tile, ancestor_tile, bounds_intersect, child_tiles, lonlat_to_tile,
+    neighbours, parse_bbox, pixel_factor_for_zoom_delta,
+    plan_iterative_zoom_ladder, tile_bounds_lonlat, tile_intersects_bbox,
+    tile_bounds_3857, upscale_levels,
 )
 
 
@@ -62,6 +63,26 @@ def test_iterative_zoom_ladder():
     t = Tile(22, 100, 200)
     assert ancestor_tile(t, 18).key == Tile(18, 6, 12).key
     print("ok test_iterative_zoom_ladder")
+
+
+def test_bbox_filter():
+    glasgow = parse_bbox([-4.28516, 55.86537, -4.28008, 55.86762])
+    inside = Tile(18, 127951, 81804)
+    assert tile_intersects_bbox(inside, glasgow)
+    far = Tile(18, 0, 0)
+    assert not tile_intersects_bbox(far, glasgow)
+    assert bounds_intersect(glasgow, glasgow)
+    assert not bounds_intersect((0, 0, 1, 1), (2, 2, 3, 3))
+
+    tiles = [
+        tileio.TileFile(inside, "in"),
+        tileio.TileFile(far, "out"),
+    ]
+    picked = tileio.filter_tiles_by_bbox(tiles, glasgow)
+    assert [tf.path for tf in picked] == ["in"]
+    limited = tileio.select_tiles(tiles, bbox=glasgow, limit=1)
+    assert len(limited) == 1 and limited[0].path == "in"
+    print("ok test_bbox_filter")
 
 
 def test_colorfix_reduces_drift():
@@ -286,6 +307,7 @@ def test_tile_rank_orders_by_divergence():
 if __name__ == "__main__":
     test_tile_math()
     test_iterative_zoom_ladder()
+    test_bbox_filter()
     test_colorfix_reduces_drift()
     test_retile_grid()
     test_blend_helpers()

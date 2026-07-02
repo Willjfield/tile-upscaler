@@ -31,6 +31,7 @@ from tile_upscaler import eval as ev
 from tile_upscaler import osm_render, retile, tileio
 from tile_upscaler import upscale_baseline, upscale_controlnet
 from tile_upscaler.tile_rank import best_tile_keys, default_rankings_path
+from tile_upscaler.tiles import Bounds, aoi_bbox_from_config, parse_bbox
 
 
 def _load_config(path: str) -> dict:
@@ -45,6 +46,31 @@ def _first_tile_size(root: str) -> int:
     return tileio.load_image(tiles[0].path).width
 
 
+def _resolve_bbox_filter(cfg: dict, args) -> Optional[Bounds]:
+    """BBox from CLI (highest priority) or config ``filter`` / ``aois``."""
+    if getattr(args, "bbox", None):
+        return parse_bbox(args.bbox)
+    if getattr(args, "aoi", None):
+        try:
+            return aoi_bbox_from_config(cfg, args.aoi)
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
+    filt = cfg.get("filter") or {}
+    if filt.get("bbox"):
+        return parse_bbox(filt["bbox"])
+    if filt.get("aoi"):
+        try:
+            return aoi_bbox_from_config(cfg, filt["aoi"])
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
+    return None
+
+
+def _format_bbox(bbox: Bounds) -> str:
+    west, south, east, north = bbox
+    return f"{west},{south},{east},{north}"
+
+
 def _resolve_tile_keys(
     lr_root: str,
     *,
@@ -52,19 +78,42 @@ def _resolve_tile_keys(
     limit: Optional[int],
     rankings_path: Optional[str],
     out_dir: str,
+    bbox: Optional[Bounds] = None,
 ) -> Optional[List[str]]:
     """Return an ordered tile-key subset, or None to process every tile."""
+    tiles = tileio.find_tiles(lr_root)
+    if bbox is not None:
+        tiles = tileio.filter_tiles_by_bbox(tiles, bbox)
+        print(
+            f"Bbox filter {_format_bbox(bbox)}: {len(tiles)} tile(s) on disk intersect"
+        )
+        if not tiles:
+            raise SystemExit(f"No raster tiles under {lr_root} intersect the bbox")
+
     if best is not None:
         if limit is not None:
             print("Note: --best takes precedence over --limit")
         path = rankings_path or default_rankings_path(out_dir)
-        keys = best_tile_keys(path, best)
+        ranked_keys = best_tile_keys(path, best)
+        allowed = {tf.tile.key for tf in tiles}
+        keys = [key for key in ranked_keys if key in allowed]
+        if len(keys) < len(ranked_keys):
+            print(
+                f"Note: {len(ranked_keys) - len(keys)} ranked tile(s) outside the bbox "
+                f"or missing from {lr_root}"
+            )
+        if not keys:
+            raise SystemExit("No ranked tiles fall inside the bbox on disk")
         print(f"Using top {len(keys)} ranked tile(s) from {path}:")
         for key in keys:
             print(f"  {key}")
         return keys
     if limit is not None:
-        return [tf.tile.key for tf in tileio.find_tiles(lr_root)[:limit]]
+        selected = tiles[:limit]
+        print(f"Using first {len(selected)} tile(s) after bbox filter")
+        return [tf.tile.key for tf in selected]
+    if bbox is not None:
+        return [tf.tile.key for tf in tiles]
     return None
 
 
@@ -150,6 +199,18 @@ def main(argv=None) -> int:
         default=None,
         help="Rankings JSON for --best (default: <paths.out>/tile_rankings.json)",
     )
+    parser.add_argument(
+        "--bbox",
+        metavar="W,S,E,N",
+        default=None,
+        help="Only process tiles intersecting this lon/lat bbox (overrides config filter)",
+    )
+    parser.add_argument(
+        "--aoi",
+        metavar="NAME",
+        default=None,
+        help="Use bbox from aois[].name in config (overrides config filter.aoi)",
+    )
     parser.add_argument("--skip-osm", action="store_true", help="Reuse existing OSM render")
     parser.add_argument(
         "--archive-out",
@@ -177,6 +238,7 @@ def main(argv=None) -> int:
         return 0
 
     factor = int(cfg["upscale"]["factor"])
+    bbox_filter = _resolve_bbox_filter(cfg, args)
 
     if args.eval_only:
         hr_root = (cfg.get("eval") or {}).get("hr_root")
@@ -187,6 +249,7 @@ def main(argv=None) -> int:
             limit=args.limit,
             rankings_path=args.rankings,
             out_dir=out,
+            bbox=bbox_filter,
         )
         up_root = os.path.join(out, "up")
         if not os.path.isdir(up_root):
@@ -221,6 +284,7 @@ def main(argv=None) -> int:
             limit=args.limit,
             rankings_path=args.rankings,
             out_dir=out,
+            bbox=bbox_filter,
         )
         it.run_iterative(
             cfg,
@@ -254,6 +318,7 @@ def main(argv=None) -> int:
         limit=args.limit,
         rankings_path=args.rankings,
         out_dir=out,
+        bbox=bbox_filter,
     )
 
     lr_size = _first_tile_size(lr_root)
